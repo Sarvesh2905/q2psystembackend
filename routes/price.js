@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../db");
 const jwt = require("jsonwebtoken");
+const ExcelJS = require("exceljs");
 
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
@@ -14,7 +15,6 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── Auto-expire records whose ExpDate has passed (runs on every GET) ──────────
 async function autoExpire() {
   try {
     await pool.query(
@@ -23,7 +23,7 @@ async function autoExpire() {
   } catch (_) {}
 }
 
-// ── GET all active prices (ordered by Cftipartno ASC) ────────────────────────
+// ── GET all active Standard prices ───────────────────────────────────────────
 router.get("/", authMiddleware, async (req, res) => {
   await autoExpire();
   try {
@@ -40,14 +40,14 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET Leadtime & DeliveryTerm options from quotedata ───────────────────────
+// ── GET dropdown options ──────────────────────────────────────────────────────
 router.get("/options", authMiddleware, async (req, res) => {
   try {
     const [leadtimes] = await pool.query(
       `SELECT Data FROM quotedata WHERE Type='Leadtime' AND Status='Active' ORDER BY Data ASC`,
     );
     const [deliveryterms] = await pool.query(
-      `SELECT Data FROM quotedata WHERE Type='DeliveryTerm' AND Status='Active' ORDER BY Data ASC`,
+      `SELECT Data FROM quotedata WHERE Type='Deliveryterm' AND Status='Active' ORDER BY Data ASC`,
     );
     const [products] = await pool.query(
       `SELECT Products FROM product WHERE status='Active' ORDER BY Products ASC`,
@@ -62,14 +62,14 @@ router.get("/options", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET CFTI part numbers for dropdown ───────────────────────────────────────
+// ── GET CFTI part numbers ─────────────────────────────────────────────────────
 router.get("/cftiparts", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT DISTINCT Cftipartno FROM price
        WHERE (StartDate <= CURDATE() OR StartDate IS NULL)
-       AND (ExpDate IS NULL OR ExpDate >= CURDATE())
-       AND status='Active'
+         AND (ExpDate IS NULL OR ExpDate >= CURDATE())
+         AND status='Active'
        ORDER BY Cftipartno ASC`,
     );
     res.json(rows.map((r) => r.Cftipartno));
@@ -78,7 +78,7 @@ router.get("/cftiparts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Customerpartno (gepn) ────────────────────────────────────
+// ── CHECK duplicate Customer PN ───────────────────────────────────────────────
 router.get("/check/custpartno", authMiddleware, async (req, res) => {
   const { custpartno } = req.query;
   try {
@@ -90,8 +90,7 @@ router.get("/check/custpartno", authMiddleware, async (req, res) => {
       if (rows.length > 0)
         return res.json({
           exists: true,
-          message:
-            "The Customer Part Number already exists. Please enter a different one.",
+          message: "Customer Part Number already exists.",
         });
     }
     res.json({ exists: false });
@@ -100,7 +99,7 @@ router.get("/check/custpartno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK open quotes for a part (before allowing Leadtime/DeliveryTerm edit) ─
+// ── CHECK open quote ──────────────────────────────────────────────────────────
 router.get("/check/openquote", authMiddleware, async (req, res) => {
   const { cftipartno, custpartno } = req.query;
   try {
@@ -111,7 +110,8 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
          WHERE d.CustomerPartNo=? AND d.CftiPartNo=?
          AND EXISTS (
            SELECT 1 FROM quoteregister q WHERE q.Quotenumber=d.Quotenumber
-           AND q.Opportunitystage IN (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
+           AND q.Opportunitystage IN
+             (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
          )`,
         [custpartno, cftipartno],
       );
@@ -121,26 +121,121 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
          WHERE d.CftiPartNo=?
          AND EXISTS (
            SELECT 1 FROM quoteregister q WHERE q.Quotenumber=d.Quotenumber
-           AND q.Opportunitystage IN (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
+           AND q.Opportunitystage IN
+             (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
          )`,
         [cftipartno],
       );
     }
-    if (rows.length > 0) {
+    if (rows.length > 0)
       return res.json({
         openquote: true,
         message: `There is an Open Quote with this CFTI Part Number. Editing Leadtime and DeliveryTerm is not allowed.`,
         quotes: rows.map((r) => r.Quotenumber),
       });
-    }
     res.json({ openquote: false });
-  } catch (err) {
-    // pricescheduledetails may not exist yet — allow edit
+  } catch {
     res.json({ openquote: false });
   }
 });
 
-// ── ADD price ─────────────────────────────────────────────────────────────────
+// ── DOWNLOAD Standard with full data — Admin/Manager only ────────────────────
+router.get("/download", authMiddleware, async (req, res) => {
+  const role = req.user?.role;
+  if (role !== "Admin" && role !== "Manager")
+    return res
+      .status(403)
+      .json({ message: "Access denied. Only Admin/Manager can download." });
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT LTSACode, Customerpartno, Cftipartno, Description,
+              ListPrice, StartDate, ExpDate, Curr,
+              Leadtime, DeliveryTerm, SPLCond, Remarks,
+              Product, Market, status
+       FROM price
+       ORDER BY Cftipartno ASC`,
+    );
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Price Data");
+
+    worksheet.columns = [
+      { header: "LTSACode", key: "LTSACode", width: 14 },
+      { header: "Customerpartno", key: "Customerpartno", width: 18 },
+      { header: "Cftipartno", key: "Cftipartno", width: 18 },
+      { header: "Description", key: "Description", width: 32 },
+      { header: "ListPrice", key: "ListPrice", width: 14 },
+      { header: "StartDate", key: "StartDate", width: 14 },
+      { header: "ExpDate", key: "ExpDate", width: 14 },
+      { header: "Currency", key: "Currency", width: 10 },
+      { header: "Leadtime", key: "Leadtime", width: 14 },
+      { header: "DeliveryTerm", key: "DeliveryTerm", width: 16 },
+      { header: "SPLCond", key: "SPLCond", width: 14 },
+      { header: "Remarks", key: "Remarks", width: 14 },
+      { header: "Product", key: "Product", width: 14 },
+      { header: "Market", key: "Market", width: 10 },
+      { header: "Status", key: "Status", width: 10 },
+    ];
+
+    const hr = worksheet.getRow(1);
+    hr.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    hr.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF8B0000" },
+    };
+    hr.alignment = { horizontal: "center", vertical: "middle" };
+    hr.height = 20;
+
+    rows.forEach((row) => {
+      const added = worksheet.addRow({
+        LTSACode: row.LTSACode || "DEFAULT00",
+        Customerpartno: row.Customerpartno || "",
+        Cftipartno: row.Cftipartno || "",
+        Description: row.Description || "",
+        ListPrice: row.ListPrice || 0,
+        StartDate: row.StartDate
+          ? new Date(row.StartDate).toISOString().split("T")[0]
+          : "",
+        ExpDate: row.ExpDate
+          ? new Date(row.ExpDate).toISOString().split("T")[0]
+          : "",
+        Currency: row.Curr || "USD",
+        Leadtime: row.Leadtime || "",
+        DeliveryTerm: row.DeliveryTerm || "",
+        SPLCond: row.SPLCond || "",
+        Remarks: row.Remarks || "",
+        Product: row.Product || "",
+        Market: row.Market || "",
+        Status: row.status || "Active",
+      });
+      if (added.number % 2 === 0)
+        added.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFF5F5" },
+        };
+    });
+
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+    const today = new Date().toISOString().split("T")[0];
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=standard_price_${today}.xlsx`,
+    );
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    res.status(500).json({ message: "Download error: " + err.message });
+  }
+});
+
+// ── ADD Standard price ────────────────────────────────────────────────────────
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -163,7 +258,6 @@ router.post("/", authMiddleware, async (req, res) => {
     Market,
   } = req.body;
 
-  // Mandatory fields
   if (
     !Cftipartno ||
     !Description ||
@@ -177,12 +271,8 @@ router.post("/", authMiddleware, async (req, res) => {
   )
     return res
       .status(400)
-      .json({
-        message:
-          "CFTI Part No, Description, List Price, Start Date, Currency, Lead Time, Delivery Term, Product and Market are required.",
-      });
+      .json({ message: "All required fields must be filled." });
 
-  // Defaults / casing
   LTSACode = LTSACode?.trim() || "DEFAULT00";
   Customerpartno = Customerpartno?.trim() || null;
   Cftipartno = Cftipartno.trim().toUpperCase();
@@ -192,25 +282,21 @@ router.post("/", authMiddleware, async (req, res) => {
   SPLCond = SPLCond?.trim() || null;
   Remarks = Remarks?.trim() || null;
 
-  // Format dates YYYY-MM-DD
   const fmtDate = (d) => {
     if (!d) return null;
-    // Support dd-mm-yyyy or yyyy-mm-dd
     if (d.includes("-") && d.split("-")[0].length === 4) return d;
     const [dd, mm, yyyy] = d.split("-");
     return `${yyyy}-${mm}-${dd}`;
   };
-  const startFmt = fmtDate(StartDate);
-  const expFmt = fmtDate(ExpDate) || null;
 
   try {
     const [maxRow] = await pool.query("SELECT MAX(Sno) as maxSno FROM price");
     const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO price (Sno, LTSACode, Customerpartno, Cftipartno, Description,
-        ListPrice, StartDate, ExpDate, Curr, Leadtime, DeliveryTerm,
-        SPLCond, Remarks, Product, Market, status)
+      `INSERT INTO price
+         (Sno, LTSACode, Customerpartno, Cftipartno, Description,
+          ListPrice, StartDate, ExpDate, Curr, Leadtime,
+          DeliveryTerm, SPLCond, Remarks, Product, Market, status)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         newSno,
@@ -219,8 +305,8 @@ router.post("/", authMiddleware, async (req, res) => {
         Cftipartno,
         Description,
         parseFloat(ListPrice),
-        startFmt,
-        expFmt,
+        fmtDate(StartDate),
+        fmtDate(ExpDate) || null,
         Curr,
         Leadtime,
         DeliveryTerm,
@@ -237,14 +323,14 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT price (only ExpDate, Leadtime, DeliveryTerm, SPLCond, Remarks editable) ─
+// ── EDIT Standard price ───────────────────────────────────────────────────────
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
   const { sno } = req.params;
-  let { ExpDate, Leadtime, DeliveryTerm, SPLCond, Remarks } = req.body;
+  const { ExpDate, Leadtime, DeliveryTerm, SPLCond, Remarks } = req.body;
 
   const fmtDate = (d) => {
     if (!d) return null;
@@ -252,13 +338,13 @@ router.put("/:sno", authMiddleware, async (req, res) => {
     const [dd, mm, yyyy] = d.split("-");
     return `${yyyy}-${mm}-${dd}`;
   };
-  const expFmt = fmtDate(ExpDate) || null;
 
   try {
     await pool.query(
-      `UPDATE price SET ExpDate=?, Leadtime=?, DeliveryTerm=?, SPLCond=?, Remarks=? WHERE Sno=?`,
+      `UPDATE price SET ExpDate=?, Leadtime=?, DeliveryTerm=?, SPLCond=?, Remarks=?
+       WHERE Sno=?`,
       [
-        expFmt,
+        fmtDate(ExpDate) || null,
         Leadtime || null,
         DeliveryTerm || null,
         SPLCond || null,
@@ -272,7 +358,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// ── TOGGLE Standard status ────────────────────────────────────────────────────
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
