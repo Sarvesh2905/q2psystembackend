@@ -28,6 +28,19 @@ router.get("/", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+router.get("/counts", authMiddleware, async (req, res) => {
+  try {
+    const [[active]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Customertype' AND Status='Active'",
+    );
+    const [[inactive]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Customertype' AND Status='Inactive'",
+    );
+    res.json({ active: active.cnt, inactive: inactive.cnt });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // ── CHECK duplicate ──────────────────────────────────────────────────────────
 router.get("/check", authMiddleware, async (req, res) => {

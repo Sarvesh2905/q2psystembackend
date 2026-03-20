@@ -15,7 +15,15 @@ function authMiddleware(req, res, next) {
 }
 
 const PRIVILEGE_VALUES = ["Allowmaster", "Restrictmaster"];
-
+router.get("/counts", authMiddleware, async (req, res) => {
+  const [[a]] = await pool.query(
+    "SELECT COUNT(*) AS cnt FROM privileges WHERE status='Active'",
+  );
+  const [[i]] = await pool.query(
+    "SELECT COUNT(*) AS cnt FROM privileges WHERE status='Inactive'",
+  );
+  res.json({ active: a.cnt, inactive: i.cnt });
+});
 // ── GET all (A-Z by Program) ──────────────────────────────────────────────────
 router.get("/", authMiddleware, async (req, res) => {
   try {

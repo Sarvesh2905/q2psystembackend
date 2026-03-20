@@ -14,6 +14,7 @@ function authMiddleware(req, res, next) {
   }
 }
 
+
 // ── GET all discounts (A-Z by Type then Category) ────────────────────────────
 router.get("/", authMiddleware, async (req, res) => {
   try {

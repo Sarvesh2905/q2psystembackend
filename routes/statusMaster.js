@@ -13,6 +13,19 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+router.get("/counts", authMiddleware, async (req, res) => {
+  try {
+    const [[active]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Status' AND Status='Active'",
+    );
+    const [[inactive]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Status' AND Status='Inactive'",
+    );
+    res.json({ active: active.cnt, inactive: inactive.cnt });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 // ── GET all Opportunity Stages (A-Z by Data) ──────────────────────────────────
 router.get("/", authMiddleware, async (req, res) => {
