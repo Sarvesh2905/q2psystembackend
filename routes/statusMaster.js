@@ -13,13 +13,15 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// ── GET counts (Active / Inactive) ────────────────────────────────────────────
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Status' AND Status='Active'",
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Opportunitystage' AND Status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Status' AND Status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Opportunitystage' AND Status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -70,7 +72,7 @@ router.post("/", authMiddleware, async (req, res) => {
   if (!Data || !Data.trim())
     return res.status(400).json({ message: "Status is required." });
 
-  Data = Data.trim().toUpperCase(); // status.upper() from original
+  Data = Data.trim().toUpperCase();
 
   try {
     const [rows] = await pool.query(
