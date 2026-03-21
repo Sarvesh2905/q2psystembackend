@@ -1,4 +1,5 @@
 const express = require("express");
+const enquiryRoutes = require("./routes/enquiry");
 const cors = require("cors");
 require("dotenv").config();
 
@@ -25,6 +26,7 @@ app.use("/api/reason", require("./routes/reason"));
 app.use("/api/timeline-target", require("./routes/timelineTarget"));
 app.use("/api/cost-price", require("./routes/costPrice"));
 app.use("/api/privileged", require("./routes/privileged"));
+app.use("/api/enquiry", enquiryRoutes);
 
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () =>
