@@ -13,40 +13,48 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM salescontact WHERE status='Active'",
+      "SELECT COUNT(*) AS cnt FROM sales_contact WHERE status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM salescontact WHERE status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM sales_contact WHERE status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── GET all (A-Z by salescontactname) ────────────────────────────────────────
+// all sales contacts
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT Sno, salescontactname, email, mobile, landline, status FROM salescontact ORDER BY salescontactname ASC",
+      `SELECT Sno, sales_contact_name, email, mobile, landline, status
+       FROM sales_contact
+       ORDER BY sales_contact_name ASC`,
     );
     res.json(rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── CHECK duplicates ──────────────────────────────────────────────────────────
+// duplicate checks
 router.get("/check", authMiddleware, async (req, res) => {
   const { name, email, mobile, landline } = req.query;
   try {
     if (name) {
+      const norm = name.toLowerCase().replace(/\s/g, "");
       const [rows] = await pool.query(
-        'SELECT salescontactname FROM salescontact WHERE LOWER(REPLACE(TRIM(salescontactname)," ","")) = ?',
-        [name.toLowerCase().replace(/\s/g, "")],
+        `SELECT sales_contact_name FROM sales_contact
+         WHERE LOWER(REPLACE(TRIM(sales_contact_name), ' ', '')) = ?`,
+        [norm],
       );
       if (rows.length > 0)
         return res.json({
@@ -55,9 +63,10 @@ router.get("/check", authMiddleware, async (req, res) => {
           message: "Sales Contact name already exists.",
         });
     }
+
     if (email) {
       const [rows] = await pool.query(
-        "SELECT email FROM salescontact WHERE LOWER(TRIM(email)) = ?",
+        "SELECT email FROM sales_contact WHERE LOWER(TRIM(email)) = ?",
         [email.toLowerCase().trim()],
       );
       if (rows.length > 0)
@@ -67,9 +76,10 @@ router.get("/check", authMiddleware, async (req, res) => {
           message: "Email already exists.",
         });
     }
+
     if (mobile) {
       const [rows] = await pool.query(
-        "SELECT mobile FROM salescontact WHERE mobile = ?",
+        "SELECT mobile FROM sales_contact WHERE mobile = ?",
         [mobile.trim()],
       );
       if (rows.length > 0)
@@ -79,9 +89,10 @@ router.get("/check", authMiddleware, async (req, res) => {
           message: "Mobile number already exists.",
         });
     }
+
     if (landline) {
       const [rows] = await pool.query(
-        "SELECT landline FROM salescontact WHERE landline = ?",
+        "SELECT landline FROM sales_contact WHERE landline = ?",
         [landline.trim()],
       );
       if (rows.length > 0)
@@ -91,13 +102,15 @@ router.get("/check", authMiddleware, async (req, res) => {
           message: "Landline already exists.",
         });
     }
+
     res.json({ exists: false });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── ADD ───────────────────────────────────────────────────────────────────────
+// add
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -115,17 +128,15 @@ router.post("/", authMiddleware, async (req, res) => {
   landline = landline?.trim() || null;
 
   try {
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM salescontact",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      "INSERT INTO salescontact (Sno, salescontactname, email, mobile, landline, status) VALUES (?,?,?,?,?,?)",
-      [newSno, salescontactname, email, mobile, landline, "Active"],
+      `INSERT INTO sales_contact
+         (sales_contact_name, email, mobile, landline, status)
+       VALUES (?, ?, ?, ?, ?)`,
+      [salescontactname, email, mobile, landline, "Active"],
     );
     res.json({ success: true, message: "Sales contact added successfully!" });
   } catch (err) {
+    console.error(err);
     if (err.code === "ER_DUP_ENTRY")
       return res
         .status(409)
@@ -134,7 +145,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT (name & email locked, only mobile & landline editable) ───────────────
+// edit
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -147,18 +158,19 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "UPDATE salescontact SET mobile = ?, landline = ? WHERE Sno = ?",
+      `UPDATE sales_contact SET mobile=?, landline=? WHERE Sno=?`,
       [mobile, landline, sno],
     );
     if (result.affectedRows === 0)
       return res.status(404).json({ message: "Record not found." });
     res.json({ success: true, message: "Sales contact updated successfully!" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -170,12 +182,13 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status." });
 
   try {
-    await pool.query("UPDATE salescontact SET status = ? WHERE Sno = ?", [
+    await pool.query("UPDATE sales_contact SET status=? WHERE Sno=?", [
       status,
       sno,
     ]);
     res.json({ success: true });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });

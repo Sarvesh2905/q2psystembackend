@@ -13,6 +13,8 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
@@ -27,14 +29,13 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-
-// ── GET all buyers (A-Z by Buyername) ────────────────────────────────────────
+// all buyers
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Customer, Buyername, Designation, email1, email2,
+      `SELECT Sno, Customer, Buyer_name, Designation, email1, email2,
               contact, Location, Segment, status, Comments
-       FROM buyer ORDER BY Customer ASC, Buyername ASC`,
+       FROM buyer ORDER BY Customer ASC, Buyer_name ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -42,12 +43,12 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET active customers for dropdown ────────────────────────────────────────
+// active customers for dropdown
 router.get("/customers", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT customername, Location, customercountry
-       FROM customer WHERE status = 'Active' ORDER BY customername ASC`,
+      `SELECT customer_name, Location, customer_country
+       FROM customer WHERE status = 'Active' ORDER BY customer_name ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -55,15 +56,15 @@ router.get("/customers", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicates ──────────────────────────────────────────────────────────
+// duplicate checks
 router.get("/check", authMiddleware, async (req, res) => {
   const { customer, buyer, email1, email2, contact1, contact2, contact3 } =
     req.query;
   try {
-    // Buyer name + Customer combo
     if (customer && buyer) {
       const [rows] = await pool.query(
-        `SELECT Buyername FROM buyer WHERE LOWER(Customer) = ? AND LOWER(Buyername) = ?`,
+        `SELECT Buyer_name FROM buyer
+         WHERE LOWER(Customer) = ? AND LOWER(Buyer_name) = ?`,
         [customer.toLowerCase(), buyer.toLowerCase()],
       );
       if (rows.length > 0)
@@ -74,7 +75,6 @@ router.get("/check", authMiddleware, async (req, res) => {
         });
     }
 
-    // email1 check
     if (email1) {
       const [r1] = await pool.query(
         `SELECT email1 FROM buyer WHERE LOWER(email1) = ?`,
@@ -86,6 +86,7 @@ router.get("/check", authMiddleware, async (req, res) => {
           field: "email1",
           message: "Email 1 already exists.",
         });
+
       const [r2] = await pool.query(
         `SELECT email2 FROM buyer WHERE LOWER(email2) = ?`,
         [email1.toLowerCase()],
@@ -98,7 +99,6 @@ router.get("/check", authMiddleware, async (req, res) => {
         });
     }
 
-    // email2 check
     if (email2) {
       const [r1] = await pool.query(
         `SELECT email2 FROM buyer WHERE LOWER(email2) = ?`,
@@ -110,6 +110,7 @@ router.get("/check", authMiddleware, async (req, res) => {
           field: "email2",
           message: "Email 2 already exists.",
         });
+
       const [r2] = await pool.query(
         `SELECT email1 FROM buyer WHERE LOWER(email1) = ?`,
         [email2.toLowerCase()],
@@ -122,7 +123,6 @@ router.get("/check", authMiddleware, async (req, res) => {
         });
     }
 
-    // contact check — contacts are stored as comma-separated in one column
     if (contact1 || contact2 || contact3) {
       const [allContacts] = await pool.query(
         `SELECT contact FROM buyer WHERE contact IS NOT NULL`,
@@ -160,7 +160,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD buyer ─────────────────────────────────────────────────────────────────
+// add buyer
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -185,21 +185,17 @@ router.post("/", authMiddleware, async (req, res) => {
       .status(400)
       .json({ message: "Customer and Buyer Name are required." });
 
-  // Join contacts as comma-separated (same as original)
   const contact =
     [contact1, contact2, contact3].filter((c) => c && c.trim()).join(",") ||
     null;
 
   try {
-    const [maxRow] = await pool.query("SELECT MAX(Sno) as maxSno FROM buyer");
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO buyer (Sno, Customer, Buyername, Designation, email1, email2,
-        contact, Location, Segment, status, Comments)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO buyer
+        (Customer, Buyer_name, Designation, email1, email2,
+         contact, Location, Segment, status, Comments)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
-        newSno,
         Customer,
         Buyername,
         Designation || null,
@@ -218,7 +214,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT buyer (Customer, Buyername locked) ───────────────────────────────────
+// edit buyer
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -253,7 +249,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")

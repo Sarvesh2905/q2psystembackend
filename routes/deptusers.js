@@ -1,9 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
-
-// ── Middleware: verify JWT ────────────────────────────────────────────────────
 const jwt = require("jsonwebtoken");
+
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "Unauthorized" });
@@ -14,20 +13,30 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
-// ── GET counts ────────────────────────────────────────────────────────────────
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
-    const [[active]]   = await pool.query("SELECT COUNT(*) AS cnt FROM deptusers WHERE status='Active'");
-    const [[inactive]] = await pool.query("SELECT COUNT(*) AS cnt FROM deptusers WHERE status='Inactive'");
+    const [[active]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM dept_users WHERE status='Active'",
+    );
+    const [[inactive]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM dept_users WHERE status='Inactive'",
+    );
     res.json({ active: active.cnt, inactive: inactive.cnt });
-  } catch (err) { res.status(500).json({ message: "Server error" }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
-// ── GET all dept users (sorted A-Z by deptuserid) ────────────────────────────
+// all dept users
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT Sno, deptuserid, Username, Email, status FROM deptusers ORDER BY deptuserid ASC",
+      `SELECT Sno, dept_user_id, Username, Email, status
+       FROM dept_users
+       ORDER BY dept_user_id ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -36,14 +45,18 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate deptuserid ────────────────────────────────────────────────
+// check duplicate dept_user_id
 router.get("/check-deptuserid", authMiddleware, async (req, res) => {
   const { deptuserid } = req.query;
   if (!deptuserid) return res.json({ exists: false });
+
   try {
+    const norm = deptuserid.toLowerCase().replace(/\s/g, "");
     const [rows] = await pool.query(
-      'SELECT deptuserid FROM deptusers WHERE LOWER(REPLACE(TRIM(deptuserid)," ","")) = ?',
-      [deptuserid.toLowerCase().replace(/\s/g, "")],
+      `SELECT dept_user_id
+       FROM dept_users
+       WHERE LOWER(REPLACE(TRIM(dept_user_id), ' ', '')) = ?`,
+      [norm],
     );
     if (rows.length > 0)
       return res.json({
@@ -52,11 +65,12 @@ router.get("/check-deptuserid", authMiddleware, async (req, res) => {
       });
     res.json({ exists: false });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── ADD dept user ─────────────────────────────────────────────────────────────
+// add dept user
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -68,28 +82,22 @@ router.post("/", authMiddleware, async (req, res) => {
       .status(400)
       .json({ message: "ID, Name and Email are required." });
 
-  // Capitalize like original Flask code
   deptuserid = deptuserid.toUpperCase();
   Username = Username.trim()
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   try {
-    // Reorder Sno to maintain sequence
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM deptusers",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      "INSERT INTO deptusers (Sno, deptuserid, Username, Email, status) VALUES (?, ?, ?, ?, ?)",
-      [newSno, deptuserid, Username, Email, "Active"],
+      `INSERT INTO dept_users (dept_user_id, Username, Email, status)
+       VALUES (?, ?, ?, ?)`,
+      [deptuserid, Username, Email, "Active"],
     );
     res.json({ success: true, message: "User added successfully!" });
   } catch (err) {
     console.error(err);
     if (err.code === "ER_DUP_ENTRY") {
-      if (err.message.includes("deptuserid"))
+      if (err.message.includes("dept_user_id"))
         return res
           .status(409)
           .json({ message: "Application Engineer ID already exists." });
@@ -100,7 +108,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT dept user ────────────────────────────────────────────────────────────
+// edit dept user
 router.put("/:deptuserid", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -118,7 +126,8 @@ router.put("/:deptuserid", authMiddleware, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "UPDATE deptusers SET Username = ?, Email = ? WHERE deptuserid = ?",
+      `UPDATE dept_users SET Username = ?, Email = ?
+       WHERE dept_user_id = ?`,
       [Username, Email, deptuserid],
     );
     if (result.affectedRows === 0)
@@ -132,7 +141,7 @@ router.put("/:deptuserid", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -145,7 +154,7 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status value." });
 
   try {
-    await pool.query("UPDATE deptusers SET status = ? WHERE Sno = ?", [
+    await pool.query("UPDATE dept_users SET status = ? WHERE Sno = ?", [
       status,
       sno,
     ]);

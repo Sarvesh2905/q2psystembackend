@@ -14,14 +14,14 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── GET counts (Active / Inactive) ────────────────────────────────────────────
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Opportunitystage' AND Status='Active'",
+      "SELECT COUNT(*) AS cnt FROM quote_data WHERE Type='Opportunitystage' AND Status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Opportunitystage' AND Status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM quote_data WHERE Type='Opportunitystage' AND Status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -29,12 +29,12 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all Opportunity Stages (A-Z by Data) ──────────────────────────────────
+// all opportunity stages
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Sno, Data, Description, Status
-       FROM quotedata WHERE Type = 'Opportunitystage' ORDER BY Data ASC`,
+       FROM quote_data WHERE Type = 'Opportunitystage' ORDER BY Data ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -42,13 +42,13 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Data ───────────────────────────────────────────────────────
+// duplicate check
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.status || "").toLowerCase().replace(/\s+/g, "");
   try {
     const [rows] = await pool.query(
       `SELECT LOWER(REPLACE(TRIM(Data),' ','')) as nm
-       FROM quotedata WHERE Type = 'Opportunitystage'`,
+       FROM quote_data WHERE Type = 'Opportunitystage'`,
     );
     const exists = rows.some((r) => r.nm === val);
     if (exists)
@@ -62,7 +62,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD ────────────────────────────────────────────────────────────────────────
+// add
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -77,7 +77,7 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT LOWER(REPLACE(TRIM(Data),' ','')) as nm
-       FROM quotedata WHERE Type = 'Opportunitystage'`,
+       FROM quote_data WHERE Type = 'Opportunitystage'`,
     );
     const normalised = Data.toLowerCase().replace(/\s+/g, "");
     if (rows.some((r) => r.nm === normalised))
@@ -86,7 +86,7 @@ router.post("/", authMiddleware, async (req, res) => {
       });
 
     await pool.query(
-      `INSERT INTO quotedata (Data, Type, Description, Status)
+      `INSERT INTO quote_data (Data, Type, Description, Status)
        VALUES (?, 'Opportunitystage', ?, 'Active')`,
       [Data, Description?.trim() || null],
     );
@@ -96,7 +96,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT (only Description editable — Data is locked) ─────────────────────────
+// edit (Description only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -107,7 +107,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE quotedata SET Description=? WHERE Sno=? AND Type='Opportunitystage'`,
+      `UPDATE quote_data SET Description=? WHERE Sno=? AND Type='Opportunitystage'`,
       [Description?.trim() || null, sno],
     );
     res.json({ success: true, message: "Status updated successfully!" });
@@ -116,7 +116,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ──────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -130,7 +130,7 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE quotedata SET Status=? WHERE Sno=? AND Type='Opportunitystage'`,
+      `UPDATE quote_data SET Status=? WHERE Sno=? AND Type='Opportunitystage'`,
       [status, sno],
     );
     res.json({ success: true });

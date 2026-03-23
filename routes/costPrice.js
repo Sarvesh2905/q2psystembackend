@@ -13,13 +13,15 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM costprice WHERE status='Active'",
+      "SELECT COUNT(*) AS cnt FROM cost_price WHERE status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM costprice WHERE status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM cost_price WHERE status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -27,14 +29,13 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-
-// ── GET all (A-Z by Cftipartno) ───────────────────────────────────────────────
+// all cost prices
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Cftipartno, Description, CostPrice, Currency,
+      `SELECT Sno, Cfti_partno, Description, Cost_Price, Currency,
               Product, Market, status
-       FROM costprice ORDER BY Cftipartno ASC`,
+       FROM cost_price ORDER BY Cfti_partno ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -42,12 +43,12 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Cftipartno ────────────────────────────────────────────────
+// duplicate Cfti_partno check
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.cftipartno || "").toLowerCase().trim();
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(TRIM(Cftipartno)) as nm FROM costprice`,
+      `SELECT LOWER(TRIM(Cfti_partno)) as nm FROM cost_price`,
     );
     const exists = rows.some((r) => r.nm === val);
     if (exists)
@@ -62,7 +63,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET products list for dropdown ───────────────────────────────────────────
+// products dropdown
 router.get("/products", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -74,7 +75,7 @@ router.get("/products", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD ───────────────────────────────────────────────────────────────────────
+// add cost price
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -98,7 +99,7 @@ router.post("/", authMiddleware, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(TRIM(Cftipartno)) as nm FROM costprice`,
+      `SELECT LOWER(TRIM(Cfti_partno)) as nm FROM cost_price`,
     );
     const normalised = Cftipartno.toLowerCase();
     if (rows.some((r) => r.nm === normalised))
@@ -107,16 +108,11 @@ router.post("/", authMiddleware, async (req, res) => {
           "The CFTI Part No. already exists. Please enter a different one.",
       });
 
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM costprice",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO costprice (Sno, Cftipartno, Description, CostPrice, Currency, Product, Market, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'Active')`,
+      `INSERT INTO cost_price
+        (Cfti_partno, Description, Cost_Price, Currency, Product, Market, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
       [
-        newSno,
         Cftipartno,
         Description?.trim() || null,
         Number(CostPrice),
@@ -131,7 +127,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT (Cftipartno = LOCKED; CostPrice, Description, Currency, Product, Market editable) ──
+// edit cost price
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -151,8 +147,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE costprice
-       SET Description=?, CostPrice=?, Currency=?, Product=?, Market=?
+      `UPDATE cost_price
+       SET Description=?, Cost_Price=?, Currency=?, Product=?, Market=?
        WHERE Sno=?`,
       [
         Description?.trim() || null,
@@ -169,7 +165,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -182,7 +178,7 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status." });
 
   try {
-    await pool.query(`UPDATE costprice SET status=? WHERE Sno=?`, [
+    await pool.query(`UPDATE cost_price SET status=? WHERE Sno=?`, [
       status,
       sno,
     ]);

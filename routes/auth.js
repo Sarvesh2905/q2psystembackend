@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ─── GET all active sites ────────────────────────────────────────────────────
+// GET all active sites
 router.get("/sites", async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -26,10 +26,9 @@ router.get("/sites", async (req, res) => {
   }
 });
 
-// ─── LOGIN ───────────────────────────────────────────────────────────────────
+// LOGIN
 router.post("/login", async (req, res) => {
   const { username, password, site } = req.body;
-
   if (!username || !password || !site)
     return res.status(400).json({ message: "All fields are required." });
 
@@ -49,8 +48,8 @@ router.post("/login", async (req, res) => {
       {
         username: user.username,
         role: user.Role,
-        firstname: user.Firstname,
-        lastname: user.Lastname,
+        firstname: user.First_name,
+        lastname: user.Last_name,
         site: user.site,
       },
       process.env.JWT_SECRET,
@@ -62,8 +61,8 @@ router.post("/login", async (req, res) => {
       user: {
         username: user.username,
         role: user.Role,
-        firstname: user.Firstname,
-        lastname: user.Lastname,
+        firstname: user.First_name,
+        lastname: user.Last_name,
         site: user.site,
       },
     });
@@ -73,7 +72,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// ─── CHECK IF USERNAME EXISTS ────────────────────────────────────────────────
+// CHECK IF USERNAME EXISTS
 router.get("/check-username", async (req, res) => {
   const { username } = req.query;
   if (!username)
@@ -96,7 +95,7 @@ router.get("/check-username", async (req, res) => {
   }
 });
 
-// ─── SEND OTP ────────────────────────────────────────────────────────────────
+// SEND OTP
 router.post("/send-otp", async (req, res) => {
   const { email } = req.body;
   if (!email)
@@ -107,8 +106,8 @@ router.post("/send-otp", async (req, res) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
   try {
-    await pool.query("DELETE FROM otp_store WHERE email = ?", [email]);
-    await pool.query("INSERT INTO otp_store (email, otp) VALUES (?, ?)", [
+    await pool.query("DELETE FROM otpstore WHERE email = ?", [email]);
+    await pool.query("INSERT INTO otpstore (email, otp) VALUES (?, ?)", [
       email,
       otp,
     ]);
@@ -146,7 +145,7 @@ router.post("/send-otp", async (req, res) => {
   }
 });
 
-// ─── VERIFY OTP ──────────────────────────────────────────────────────────────
+// VERIFY OTP
 router.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp)
@@ -156,9 +155,9 @@ router.post("/verify-otp", async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `SELECT * FROM otp_store
+      `SELECT * FROM otpstore
        WHERE email = ? AND otp = ?
-       AND created_at >= NOW() - INTERVAL 10 MINUTE`,
+       AND createdat >= NOW() - INTERVAL 10 MINUTE`,
       [email, otp],
     );
 
@@ -168,7 +167,7 @@ router.post("/verify-otp", async (req, res) => {
         message: "Invalid or expired OTP. Try again.",
       });
 
-    await pool.query("DELETE FROM otp_store WHERE email = ?", [email]);
+    await pool.query("DELETE FROM otpstore WHERE email = ?", [email]);
     res.json({ success: true, message: "OTP verified successfully!" });
   } catch (err) {
     console.error(err);
@@ -176,7 +175,7 @@ router.post("/verify-otp", async (req, res) => {
   }
 });
 
-// ─── CHECK EMPLOYEE ID UNIQUENESS ────────────────────────────────────────────
+// CHECK EMPLOYEE ID UNIQUENESS
 router.get("/check-employeeid", async (req, res) => {
   const { employeeid } = req.query;
   if (!employeeid)
@@ -184,7 +183,7 @@ router.get("/check-employeeid", async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      "SELECT username FROM users WHERE EmployeeID = ?",
+      "SELECT username FROM users WHERE Employee_ID = ?",
       [employeeid],
     );
     if (rows.length > 0)
@@ -199,7 +198,7 @@ router.get("/check-employeeid", async (req, res) => {
   }
 });
 
-// ─── REGISTER / CREATE ACCOUNT ───────────────────────────────────────────────
+// REGISTER / CREATE ACCOUNT
 router.post("/register", async (req, res) => {
   const {
     username,
@@ -212,7 +211,6 @@ router.post("/register", async (req, res) => {
     Role,
   } = req.body;
 
-  // All fields mandatory
   if (
     !username ||
     !password ||
@@ -226,7 +224,6 @@ router.post("/register", async (req, res) => {
     return res.status(400).json({ message: "All fields are required." });
 
   try {
-    // Double-check username uniqueness
     const [userCheck] = await pool.query(
       "SELECT username FROM users WHERE username = ?",
       [username],
@@ -236,9 +233,8 @@ router.post("/register", async (req, res) => {
         .status(409)
         .json({ message: "This email is already registered." });
 
-    // Double-check Employee ID uniqueness
     const [empCheck] = await pool.query(
-      "SELECT username FROM users WHERE EmployeeID = ?",
+      "SELECT username FROM users WHERE Employee_ID = ?",
       [EmployeeID],
     );
     if (empCheck.length > 0)
@@ -246,9 +242,9 @@ router.post("/register", async (req, res) => {
         .status(409)
         .json({ message: "This Employee ID is already registered." });
 
-    // Insert — plain text password as per requirement
     await pool.query(
-      `INSERT INTO users (username, password, site, Firstname, Lastname, EmployeeID, Email, Role)
+      `INSERT INTO users
+         (username, password, site, First_name, Last_name, Employee_ID, Email, Role)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [username, password, site, Firstname, Lastname, EmployeeID, Email, Role],
     );
@@ -256,9 +252,8 @@ router.post("/register", async (req, res) => {
     res.json({ success: true, message: "Account created successfully!" });
   } catch (err) {
     console.error(err);
-    // Handle DB-level unique constraint violations
     if (err.code === "ER_DUP_ENTRY") {
-      if (err.message.includes("EmployeeID"))
+      if (err.message.includes("Employee_ID"))
         return res.status(409).json({ message: "Employee ID already exists." });
       return res.status(409).json({ message: "Username already exists." });
     }

@@ -14,27 +14,28 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── GET all Customer Types (A–Z) ─────────────────────────────────────────────
+// GET all Customer Types (A–Z)
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Sno, Data AS CustomerType, Status AS status
-       FROM quotedata
+       FROM quote_data
        WHERE Type = 'Customertype'
-       ORDER BY Data ASC`
+       ORDER BY Data ASC`,
     );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Customertype' AND Status='Active'",
+      "SELECT COUNT(*) AS cnt FROM quote_data WHERE Type='Customertype' AND Status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM quotedata WHERE Type='Customertype' AND Status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM quote_data WHERE Type='Customertype' AND Status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -42,14 +43,14 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate ──────────────────────────────────────────────────────────
+// CHECK duplicate
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.val || "").toLowerCase().replace(/\s+/g, "");
   try {
     const [rows] = await pool.query(
       `SELECT LOWER(REPLACE(TRIM(Data),' ','')) as nm
-       FROM quotedata
-       WHERE Type = 'Customertype'`
+       FROM quote_data
+       WHERE Type = 'Customertype'`,
     );
     const exists = rows.some((r) => r.nm === val);
     if (exists) {
@@ -65,19 +66,17 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD Customer Type ────────────────────────────────────────────────────────
+// ADD Customer Type
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager") {
     return res.status(403).json({ message: "Access denied." });
   }
 
-  let { CustomerType } = req.body; // frontend should send { CustomerType }
+  let { CustomerType } = req.body;
 
   if (!CustomerType || !CustomerType.trim()) {
-    return res
-      .status(400)
-      .json({ message: "Customer Type is required." });
+    return res.status(400).json({ message: "Customer Type is required." });
   }
 
   CustomerType = CustomerType.trim().toUpperCase();
@@ -85,8 +84,8 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT LOWER(REPLACE(TRIM(Data),' ','')) as nm
-       FROM quotedata
-       WHERE Type = 'Customertype'`
+       FROM quote_data
+       WHERE Type = 'Customertype'`,
     );
     const normalised = CustomerType.toLowerCase().replace(/\s+/g, "");
     if (rows.some((r) => r.nm === normalised)) {
@@ -97,9 +96,9 @@ router.post("/", authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO quotedata (Data, Type, Status)
+      `INSERT INTO quote_data (Data, Type, Status)
        VALUES (?, 'Customertype', 'Active')`,
-      [CustomerType]
+      [CustomerType],
     );
 
     res.json({
@@ -111,7 +110,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ────────────────────────────────────────────────────────────
+// TOGGLE status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager") {
@@ -127,10 +126,10 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
 
   try {
     await pool.query(
-      `UPDATE quotedata
+      `UPDATE quote_data
        SET Status = ?
        WHERE Sno = ? AND Type = 'Customertype'`,
-      [status, sno]
+      [status, sno],
     );
     res.json({ success: true });
   } catch (err) {

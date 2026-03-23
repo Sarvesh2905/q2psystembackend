@@ -13,6 +13,8 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
@@ -27,14 +29,14 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all customers (A-Z by customername) ───────────────────────────────────
+// all customers
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, customername, customertype, customercountry, Address,
-              City, State, Region, SubRegion, Location, Category,
-              Shortname, Ltsacode, Segment, status
-       FROM customer ORDER BY customername ASC`,
+      `SELECT Sno, customer_name, customer_type, customer_country, Address,
+              City, State, Region, Sub_Region, Location, Category,
+              Short_name, Ltsa_code, Segment, status
+       FROM customer ORDER BY customer_name ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -42,11 +44,11 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET customer types from quotedata ─────────────────────────────────────────
+// customer types from quote_data
 router.get("/custtypes", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Data FROM quotedata WHERE Type = 'Customertype' AND Status = 'Active' ORDER BY Data ASC`,
+      `SELECT Data FROM quote_data WHERE Type = 'Customertype' AND Status = 'Active' ORDER BY Data ASC`,
     );
     res.json(rows.map((r) => r.Data));
   } catch (err) {
@@ -54,19 +56,19 @@ router.get("/custtypes", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET countries ─────────────────────────────────────────────────────────────
+// countries
 router.get("/countries", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Countryname FROM country WHERE status = 'Active' ORDER BY Countryname ASC`,
+      `SELECT Country_name FROM country WHERE status = 'Active' ORDER BY Country_name ASC`,
     );
-    res.json(rows.map((r) => r.Countryname));
+    res.json(rows.map((r) => r.Country_name));
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── GET categories (distinct from customer table) ─────────────────────────────
+// categories
 router.get("/categories", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -78,13 +80,14 @@ router.get("/categories", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate (name + location composite) ───────────────────────────────
+// duplicate checks
 router.get("/check", authMiddleware, async (req, res) => {
   const { name, location, city, country } = req.query;
   try {
     if (name && !location) {
       const [rows] = await pool.query(
-        `SELECT customername FROM customer WHERE LOWER(REPLACE(TRIM(customername),' ','')) = ?`,
+        `SELECT customer_name FROM customer
+         WHERE LOWER(REPLACE(TRIM(customer_name),' ','')) = ?`,
         [name.toLowerCase().replace(/\s/g, "")],
       );
       if (rows.length > 0)
@@ -97,7 +100,8 @@ router.get("/check", authMiddleware, async (req, res) => {
     }
     if (name && location) {
       const [rows] = await pool.query(
-        `SELECT Location FROM customer WHERE LOWER(customername) = ? AND LOWER(REPLACE(TRIM(Location),' ','')) = ?`,
+        `SELECT Location FROM customer
+         WHERE LOWER(customer_name) = ? AND LOWER(REPLACE(TRIM(Location),' ','')) = ?`,
         [name.toLowerCase(), location.toLowerCase().replace(/\s/g, "")],
       );
       if (rows.length > 0)
@@ -120,7 +124,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD customer ──────────────────────────────────────────────────────────────
+// add customer
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -161,17 +165,12 @@ router.post("/", authMiddleware, async (req, res) => {
   Segment = Segment?.trim() || "Industrial";
 
   try {
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM customer",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO customer (Sno, customername, customertype, customercountry, Address, City, State,
-        Region, SubRegion, Location, Category, Shortname, Ltsacode, Segment, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO customer
+        (customer_name, customer_type, customer_country, Address, City, State,
+         Region, Sub_Region, Location, Category, Short_name, Ltsa_code, Segment, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        newSno,
         customername,
         customertype,
         customercountry,
@@ -191,16 +190,14 @@ router.post("/", authMiddleware, async (req, res) => {
     res.json({ success: true, message: "Customer added successfully!" });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY")
-      return res
-        .status(409)
-        .json({
-          message: "Customer with this name and location already exists.",
-        });
+      return res.status(409).json({
+        message: "Customer with this name and location already exists.",
+      });
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── EDIT customer (name, type, country locked) ────────────────────────────────
+// edit customer
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -222,8 +219,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      `UPDATE customer SET Address=?, City=?, State=?, Region=?, SubRegion=?,
-       Location=?, Category=?, Shortname=?, Ltsacode=?, Segment=? WHERE Sno=?`,
+      `UPDATE customer SET Address=?, City=?, State=?, Region=?, Sub_Region=?,
+       Location=?, Category=?, Short_name=?, Ltsa_code=?, Segment=? WHERE Sno=?`,
       [
         Address || null,
         City || "",
@@ -246,7 +243,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")

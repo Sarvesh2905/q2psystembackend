@@ -14,13 +14,14 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── GET all (A-Z by Product) ──────────────────────────────────────────────────
+// GET all timeline targets
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Sno, Product, Enquiry, Technicaloffer, Pricedoffer,
               Pricebookorder, Regret, Cancelled
-       FROM timelinetarget ORDER BY Product ASC`,
+       FROM timeline_target
+       ORDER BY Product ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -28,13 +29,13 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET products list (from product master, not yet in timelinetarget) ─────────
+// products not yet in timeline_target
 router.get("/available-products", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Products FROM product
        WHERE status = 'Active'
-       AND Products NOT IN (SELECT Product FROM timelinetarget)
+         AND Products NOT IN (SELECT Product FROM timeline_target)
        ORDER BY Products ASC`,
     );
     res.json(rows.map((r) => r.Products));
@@ -43,12 +44,12 @@ router.get("/available-products", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Product ────────────────────────────────────────────────────
+// duplicate Product check
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.product || "").toLowerCase().trim();
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(TRIM(Product)) as nm FROM timelinetarget`,
+      "SELECT LOWER(TRIM(Product)) as nm FROM timeline_target",
     );
     const exists = rows.some((r) => r.nm === val);
     if (exists)
@@ -62,7 +63,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD ───────────────────────────────────────────────────────────────────────
+// ADD timeline target
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -89,6 +90,7 @@ router.post("/", authMiddleware, async (req, res) => {
     Regret,
     Cancelled,
   };
+
   for (const [key, val] of Object.entries(fields)) {
     if (val === undefined || val === null || val === "")
       return res.status(400).json({ message: `${key} is required.` });
@@ -99,17 +101,12 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 
   try {
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM timelinetarget",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO timelinetarget
-         (Sno, Product, Enquiry, Technicaloffer, Pricedoffer, Pricebookorder, Regret, Cancelled)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO timeline_target
+         (Product, Enquiry, Technicaloffer, Pricedoffer,
+          Pricebookorder, Regret, Cancelled)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        newSno,
         Product.trim(),
         Number(Enquiry),
         Number(Technicaloffer),
@@ -122,14 +119,14 @@ router.post("/", authMiddleware, async (req, res) => {
     res.json({ success: true, message: "Timeline Target added successfully!" });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY")
-      return res
-        .status(409)
-        .json({ message: "Timeline target for this Product already exists." });
+      return res.status(409).json({
+        message: "Timeline target for this Product already exists.",
+      });
     res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
-// ── EDIT (Product = LOCKED, all numeric fields editable) ──────────────────────
+// EDIT timeline target (Product locked)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -153,6 +150,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
     Regret,
     Cancelled,
   };
+
   for (const [key, val] of Object.entries(fields)) {
     if (val === undefined || val === null || val === "")
       return res.status(400).json({ message: `${key} is required.` });
@@ -163,8 +161,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 
   try {
-    await pool.query(
-      `UPDATE timelinetarget
+    const [result] = await pool.query(
+      `UPDATE timeline_target
        SET Enquiry=?, Technicaloffer=?, Pricedoffer=?,
            Pricebookorder=?, Regret=?, Cancelled=?
        WHERE Sno=?`,
@@ -178,6 +176,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
         sno,
       ],
     );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ message: "Record not found." });
     res.json({
       success: true,
       message: "Timeline Target updated successfully!",

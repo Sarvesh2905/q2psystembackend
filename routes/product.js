@@ -13,6 +13,8 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
@@ -27,11 +29,11 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all products (A-Z by Products) ───────────────────────────────────────
+// all products
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Products, Description, FacingFactory, Prdgroup, status
+      `SELECT Sno, Products, Description, Facing_Factory, Prd_group, status
        FROM product ORDER BY Products ASC`,
     );
     res.json(rows);
@@ -40,13 +42,14 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Products name ─────────────────────────────────────────────
+// duplicate check
 router.get("/check", authMiddleware, async (req, res) => {
   const { product } = req.query;
   try {
     if (product) {
       const [rows] = await pool.query(
-        `SELECT Products FROM product WHERE LOWER(REPLACE(TRIM(Products),' ','')) = ?`,
+        `SELECT Products FROM product
+         WHERE LOWER(REPLACE(TRIM(Products),' ','')) = ?`,
         [product.toLowerCase().replace(/\s+/g, "")],
       );
       if (rows.length > 0)
@@ -61,7 +64,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD product ───────────────────────────────────────────────────────────────
+// add product
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -70,13 +73,10 @@ router.post("/", authMiddleware, async (req, res) => {
   let { Products, Description, FacingFactory, Prdgroup } = req.body;
 
   if (!Products || !FacingFactory || !Prdgroup)
-    return res
-      .status(400)
-      .json({
-        message: "Product Name, Facing Factory and Group are required.",
-      });
+    return res.status(400).json({
+      message: "Product Name, Facing Factory and Group are required.",
+    });
 
-  // Apply casing as per original
   Products = Products.trim().toUpperCase();
   FacingFactory = FacingFactory.trim().toUpperCase();
   Prdgroup = Prdgroup.trim().toUpperCase();
@@ -86,27 +86,23 @@ router.post("/", authMiddleware, async (req, res) => {
     : null;
 
   try {
-    const [maxRow] = await pool.query("SELECT MAX(Sno) as maxSno FROM product");
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO product (Sno, Products, Description, FacingFactory, status, Image, Prdgroup)
-       VALUES (?,?,?,?,?,?,?)`,
-      [newSno, Products, Description, FacingFactory, "Active", "", Prdgroup],
+      `INSERT INTO product
+        (Products, Description, Facing_Factory, status, Image, Prd_group)
+       VALUES (?,?,?,?,?,?)`,
+      [Products, Description, FacingFactory, "Active", null, Prdgroup],
     );
     res.json({ success: true, message: "Product added successfully!" });
   } catch (err) {
     if (err.code === "ER_DUP_ENTRY")
-      return res
-        .status(409)
-        .json({
-          message: "The Product already exists. Please enter a different one.",
-        });
+      return res.status(409).json({
+        message: "The Product already exists. Please enter a different one.",
+      });
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── EDIT product (only Description editable) ──────────────────────────────────
+// edit product (Description only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -133,7 +129,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status (check open quotes before going Inactive) ──────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -145,21 +141,28 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status." });
 
   try {
-    // Check open quotes when trying to go Inactive
     if (status === "Inactive") {
-      const [openQuotes] = await pool.query(
-        `SELECT Quotenumber FROM quoteregister
-         WHERE Product IN (SELECT Products FROM product WHERE Sno=?)
-         AND Opportunitystage IN (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))`,
+      const [[prod]] = await pool.query(
+        `SELECT Products FROM product WHERE Sno=?`,
         [sno],
       );
-      if (openQuotes.length > 0) {
-        const qnos = openQuotes.map((q) => q.Quotenumber).join(", ");
-        return res.json({
-          success: false,
-          openquote: true,
-          message: `There are Open Quotes with this Product: ${qnos}`,
-        });
+      if (prod) {
+        const [openQuotes] = await pool.query(
+          `SELECT Quote_number FROM quote_register
+           WHERE FIND_IN_SET(?, REPLACE(Product, ', ', ','))
+             AND Opportunity_stage IN (
+               SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
+             )`,
+          [prod.Products],
+        );
+        if (openQuotes.length > 0) {
+          const qnos = openQuotes.map((q) => q.Quote_number).join(", ");
+          return res.json({
+            success: false,
+            openquote: true,
+            message: `There are Open Quotes with this Product: ${qnos}`,
+          });
+        }
       }
     }
     await pool.query("UPDATE product SET status=? WHERE Sno=?", [status, sno]);

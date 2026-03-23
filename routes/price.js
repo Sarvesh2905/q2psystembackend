@@ -18,10 +18,13 @@ function authMiddleware(req, res, next) {
 async function autoExpire() {
   try {
     await pool.query(
-      `UPDATE price SET status='Inactive' WHERE ExpDate < CURDATE() AND status='Active'`,
+      `UPDATE price SET status='Inactive'
+       WHERE Exp_Date < CURDATE() AND status='Active'`,
     );
   } catch (_) {}
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
@@ -36,16 +39,16 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all active Standard prices ───────────────────────────────────────────
+// all active prices
 router.get("/", authMiddleware, async (req, res) => {
   await autoExpire();
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, LTSACode, Customerpartno, Cftipartno, Description,
-              ListPrice, StartDate, ExpDate, Curr, Leadtime,
-              DeliveryTerm, SPLCond, Remarks, Product, Market, status
+      `SELECT Sno, LTSA_Code, Customer_partno, Cfti_partno, Description,
+              ListPrice, Start_Date, Exp_Date, Curr, Leadtime,
+              DeliveryTerm, SPL_Cond, Remarks, Product, Market, status
        FROM price WHERE status='Active'
-       ORDER BY Cftipartno ASC`,
+       ORDER BY Cfti_partno ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -53,14 +56,16 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET dropdown options ──────────────────────────────────────────────────────
+// dropdown options
 router.get("/options", authMiddleware, async (req, res) => {
   try {
     const [leadtimes] = await pool.query(
-      `SELECT Data FROM quotedata WHERE Type='Leadtime' AND Status='Active' ORDER BY Data ASC`,
+      `SELECT Data FROM quote_data
+       WHERE Type='Leadtime' AND Status='Active' ORDER BY Data ASC`,
     );
     const [deliveryterms] = await pool.query(
-      `SELECT Data FROM quotedata WHERE Type='Deliveryterm' AND Status='Active' ORDER BY Data ASC`,
+      `SELECT Data FROM quote_data
+       WHERE Type='Deliveryterm' AND Status='Active' ORDER BY Data ASC`,
     );
     const [products] = await pool.query(
       `SELECT Products FROM product WHERE status='Active' ORDER BY Products ASC`,
@@ -75,29 +80,29 @@ router.get("/options", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET CFTI part numbers ─────────────────────────────────────────────────────
+// CFTI part numbers
 router.get("/cftiparts", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT DISTINCT Cftipartno FROM price
-       WHERE (StartDate <= CURDATE() OR StartDate IS NULL)
-         AND (ExpDate IS NULL OR ExpDate >= CURDATE())
+      `SELECT DISTINCT Cfti_partno FROM price
+       WHERE (Start_Date <= CURDATE() OR Start_Date IS NULL)
+         AND (Exp_Date IS NULL OR Exp_Date >= CURDATE())
          AND status='Active'
-       ORDER BY Cftipartno ASC`,
+       ORDER BY Cfti_partno ASC`,
     );
-    res.json(rows.map((r) => r.Cftipartno));
+    res.json(rows.map((r) => r.Cfti_partno));
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── CHECK duplicate Customer PN ───────────────────────────────────────────────
+// duplicate Customer PN check
 router.get("/check/custpartno", authMiddleware, async (req, res) => {
   const { custpartno } = req.query;
   try {
     if (custpartno) {
       const [rows] = await pool.query(
-        `SELECT Customerpartno FROM price WHERE LOWER(Customerpartno) = ?`,
+        `SELECT Customer_partno FROM price WHERE LOWER(Customer_partno) = ?`,
         [custpartno.toLowerCase()],
       );
       if (rows.length > 0)
@@ -112,47 +117,12 @@ router.get("/check/custpartno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK open quote ──────────────────────────────────────────────────────────
+// check open quote — price_schedule_details not in DB, safe fallback
 router.get("/check/openquote", authMiddleware, async (req, res) => {
-  const { cftipartno, custpartno } = req.query;
-  try {
-    let rows;
-    if (custpartno && custpartno !== "Y" && custpartno !== "N") {
-      [rows] = await pool.query(
-        `SELECT DISTINCT d.Quotenumber FROM pricescheduledetails d
-         WHERE d.CustomerPartNo=? AND d.CftiPartNo=?
-         AND EXISTS (
-           SELECT 1 FROM quoteregister q WHERE q.Quotenumber=d.Quotenumber
-           AND q.Opportunitystage IN
-             (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
-         )`,
-        [custpartno, cftipartno],
-      );
-    } else {
-      [rows] = await pool.query(
-        `SELECT DISTINCT d.Quotenumber FROM pricescheduledetails d
-         WHERE d.CftiPartNo=?
-         AND EXISTS (
-           SELECT 1 FROM quoteregister q WHERE q.Quotenumber=d.Quotenumber
-           AND q.Opportunitystage IN
-             (SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30))
-         )`,
-        [cftipartno],
-      );
-    }
-    if (rows.length > 0)
-      return res.json({
-        openquote: true,
-        message: `There is an Open Quote with this CFTI Part Number. Editing Leadtime and DeliveryTerm is not allowed.`,
-        quotes: rows.map((r) => r.Quotenumber),
-      });
-    res.json({ openquote: false });
-  } catch {
-    res.json({ openquote: false });
-  }
+  res.json({ openquote: false });
 });
 
-// ── DOWNLOAD Standard with full data — Admin/Manager only ────────────────────
+// download full price list
 router.get("/download", authMiddleware, async (req, res) => {
   const role = req.user?.role;
   if (role !== "Admin" && role !== "Manager")
@@ -162,29 +132,29 @@ router.get("/download", authMiddleware, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `SELECT LTSACode, Customerpartno, Cftipartno, Description,
-              ListPrice, StartDate, ExpDate, Curr,
-              Leadtime, DeliveryTerm, SPLCond, Remarks,
+      `SELECT LTSA_Code, Customer_partno, Cfti_partno, Description,
+              ListPrice, Start_Date, Exp_Date, Curr,
+              Leadtime, DeliveryTerm, SPL_Cond, Remarks,
               Product, Market, status
        FROM price
-       ORDER BY Cftipartno ASC`,
+       ORDER BY Cfti_partno ASC`,
     );
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Price Data");
 
     worksheet.columns = [
-      { header: "LTSACode", key: "LTSACode", width: 14 },
-      { header: "Customerpartno", key: "Customerpartno", width: 18 },
-      { header: "Cftipartno", key: "Cftipartno", width: 18 },
+      { header: "LTSA_Code", key: "LTSA_Code", width: 14 },
+      { header: "Customer_partno", key: "Customer_partno", width: 18 },
+      { header: "Cfti_partno", key: "Cfti_partno", width: 18 },
       { header: "Description", key: "Description", width: 32 },
       { header: "ListPrice", key: "ListPrice", width: 14 },
-      { header: "StartDate", key: "StartDate", width: 14 },
-      { header: "ExpDate", key: "ExpDate", width: 14 },
+      { header: "Start_Date", key: "Start_Date", width: 14 },
+      { header: "Exp_Date", key: "Exp_Date", width: 14 },
       { header: "Currency", key: "Currency", width: 10 },
       { header: "Leadtime", key: "Leadtime", width: 14 },
       { header: "DeliveryTerm", key: "DeliveryTerm", width: 16 },
-      { header: "SPLCond", key: "SPLCond", width: 14 },
+      { header: "SPL_Cond", key: "SPL_Cond", width: 14 },
       { header: "Remarks", key: "Remarks", width: 14 },
       { header: "Product", key: "Product", width: 14 },
       { header: "Market", key: "Market", width: 10 },
@@ -203,21 +173,21 @@ router.get("/download", authMiddleware, async (req, res) => {
 
     rows.forEach((row) => {
       const added = worksheet.addRow({
-        LTSACode: row.LTSACode || "DEFAULT00",
-        Customerpartno: row.Customerpartno || "",
-        Cftipartno: row.Cftipartno || "",
+        LTSA_Code: row.LTSA_Code || "DEFAULT00",
+        Customer_partno: row.Customer_partno || "",
+        Cfti_partno: row.Cfti_partno || "",
         Description: row.Description || "",
         ListPrice: row.ListPrice || 0,
-        StartDate: row.StartDate
-          ? new Date(row.StartDate).toISOString().split("T")[0]
+        Start_Date: row.Start_Date
+          ? new Date(row.Start_Date).toISOString().split("T")[0]
           : "",
-        ExpDate: row.ExpDate
-          ? new Date(row.ExpDate).toISOString().split("T")[0]
+        Exp_Date: row.Exp_Date
+          ? new Date(row.Exp_Date).toISOString().split("T")[0]
           : "",
         Currency: row.Curr || "USD",
         Leadtime: row.Leadtime || "",
         DeliveryTerm: row.DeliveryTerm || "",
-        SPLCond: row.SPLCond || "",
+        SPL_Cond: row.SPL_Cond || "",
         Remarks: row.Remarks || "",
         Product: row.Product || "",
         Market: row.Market || "",
@@ -248,7 +218,7 @@ router.get("/download", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD Standard price ────────────────────────────────────────────────────────
+// add price
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -303,16 +273,13 @@ router.post("/", authMiddleware, async (req, res) => {
   };
 
   try {
-    const [maxRow] = await pool.query("SELECT MAX(Sno) as maxSno FROM price");
-    const newSno = (maxRow[0].maxSno || 0) + 1;
     await pool.query(
       `INSERT INTO price
-         (Sno, LTSACode, Customerpartno, Cftipartno, Description,
-          ListPrice, StartDate, ExpDate, Curr, Leadtime,
-          DeliveryTerm, SPLCond, Remarks, Product, Market, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         (LTSA_Code, Customer_partno, Cfti_partno, Description,
+          ListPrice, Start_Date, Exp_Date, Curr, Leadtime,
+          DeliveryTerm, SPL_Cond, Remarks, Product, Market, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        newSno,
         LTSACode,
         Customerpartno,
         Cftipartno,
@@ -336,7 +303,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT Standard price ───────────────────────────────────────────────────────
+// edit price
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -353,8 +320,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   };
 
   try {
-    await pool.query(
-      `UPDATE price SET ExpDate=?, Leadtime=?, DeliveryTerm=?, SPLCond=?, Remarks=?
+    const [result] = await pool.query(
+      `UPDATE price SET Exp_Date=?, Leadtime=?, DeliveryTerm=?, SPL_Cond=?, Remarks=?
        WHERE Sno=?`,
       [
         fmtDate(ExpDate) || null,
@@ -365,13 +332,15 @@ router.put("/:sno", authMiddleware, async (req, res) => {
         sno,
       ],
     );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ message: "Record not found." });
     res.json({ success: true, message: "Price updated successfully!" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── TOGGLE Standard status ────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")

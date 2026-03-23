@@ -14,8 +14,7 @@ function authMiddleware(req, res, next) {
   }
 }
 
-
-// ── GET all discounts (A-Z by Type then Category) ────────────────────────────
+// GET all discounts
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -29,14 +28,16 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET Category + Product dropdown options ───────────────────────────────────
+// dropdown options
 router.get("/options", authMiddleware, async (req, res) => {
   try {
     const [categories] = await pool.query(
-      `SELECT Data FROM quotedata WHERE Type='Customertype' AND Status='Active' ORDER BY Data ASC`,
+      `SELECT Data FROM quote_data
+       WHERE Type='Customertype' AND Status='Active' ORDER BY Data ASC`,
     );
     const [products] = await pool.query(
-      `SELECT Products FROM product WHERE status='Active' ORDER BY Products ASC`,
+      `SELECT Products FROM product
+       WHERE status='Active' ORDER BY Products ASC`,
     );
     res.json({
       categories: categories.map((r) =>
@@ -51,7 +52,7 @@ router.get("/options", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate combination (Type + Category + Market + Product) ──────────
+// duplicate combination check
 router.get("/check", authMiddleware, async (req, res) => {
   const { type, category, product, market } = req.query;
   try {
@@ -77,7 +78,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK if discount change affects open quotes (edit focusout) ──────────────
+// check if discount change affects open quotes
 router.get("/check/openquote", authMiddleware, async (req, res) => {
   const { category, product, discount } = req.query;
   const newDiscount = parseFloat(discount) || 0;
@@ -89,12 +90,13 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
     if (existing.length > 0 && existing[0].Discount !== newDiscount) {
       try {
         const [openQuotes] = await pool.query(
-          `SELECT Quotenumber FROM quoteregister WHERE Customertype=? AND Product=?`,
+          `SELECT Quote_number FROM quote_register
+           WHERE Customer_type=? AND Product=?`,
           [category, product],
         );
         if (openQuotes.length > 0) {
           const list = openQuotes
-            .map((q) => `<li style="width:150px">${q.Quotenumber}</li>`)
+            .map((q) => `<li style="width:150px">${q.Quote_number}</li>`)
             .join("");
           return res.json({
             discountchange: true,
@@ -109,7 +111,7 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD discount ──────────────────────────────────────────────────────────────
+// add discount
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -131,7 +133,6 @@ router.post("/", authMiddleware, async (req, res) => {
     });
 
   try {
-    // Duplicate check
     const [exists] = await pool.query(
       `SELECT COUNT(*) as cnt FROM discount
        WHERE LOWER(Type)=? AND LOWER(Category)=? AND LOWER(Market)=? AND LOWER(Product)=?`,
@@ -148,15 +149,10 @@ router.post("/", authMiddleware, async (req, res) => {
           "This Discount combination already exists. Please enter a different one.",
       });
 
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM discount",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO discount (Sno, Type, Category, Market, Product, Discount)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [newSno, Type, Category, Market, Product, parseFloat(Discount)],
+      `INSERT INTO discount (Type, Category, Market, Product, Discount)
+       VALUES (?, ?, ?, ?, ?)`,
+      [Type, Category, Market, Product, parseFloat(Discount)],
     );
     res.json({ success: true, message: "Discount added successfully!" });
   } catch (err) {
@@ -164,7 +160,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT discount (only Discount value is editable) ───────────────────────────
+// edit discount (value only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")

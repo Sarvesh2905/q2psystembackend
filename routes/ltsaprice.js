@@ -14,13 +14,15 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM ltsaprice WHERE status='Active'",
+      "SELECT COUNT(*) AS cnt FROM ltsa_price WHERE status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM ltsaprice WHERE status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM ltsa_price WHERE status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -28,36 +30,32 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all active LTSA prices ────────────────────────────────────────────────
-// ── GET all active LTSA prices ────────────────────────────────────────────────
+// all active LTSA prices (with auto-expire)
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    // safe auto-expire — won't crash if table is empty or has issues
     try {
       await pool.query(
-        `UPDATE ltsaprice SET status='Inactive'
-         WHERE ExpDate < CURDATE() AND status='Active'`
+        `UPDATE ltsa_price SET status='Inactive'
+         WHERE Exp_Date < CURDATE() AND status='Active'`,
       );
-    } catch (_) {}
+    } catch {}
 
     const [rows] = await pool.query(
-      `SELECT Sno, LTSACode, Customerpartno, Cftipartno, Description,
-              SplPrice, StartDate, ExpDate, Curr, Leadtime,
+      `SELECT Sno, LTSA_Code, Customer_partno, Cfti_partno, Description,
+              SplPrice, Start_Date, Exp_Date, Curr, Leadtime,
               DeliveryTerm, Product, Market, status
-       FROM ltsaprice WHERE status='Active'
-       ORDER BY Cftipartno ASC`
+       FROM ltsa_price
+       WHERE status='Active'
+       ORDER BY Cfti_partno ASC`,
     );
     res.json(rows);
   } catch (err) {
-    // Send detailed error so you can see exactly what's wrong
     res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
-
-// ── DOWNLOAD LTSA with full data ──────────────────────────────────────────────
+// download LTSA full data
 router.get("/download", authMiddleware, async (req, res) => {
-  // Role check — Admin and Manager only
   const role = req.user?.role;
   if (role !== "Admin" && role !== "Manager")
     return res
@@ -66,24 +64,24 @@ router.get("/download", authMiddleware, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      `SELECT LTSACode, Customerpartno, Cftipartno, Description,
-              SplPrice, StartDate, ExpDate,
+      `SELECT LTSA_Code, Customer_partno, Cfti_partno, Description,
+              SplPrice, Start_Date, Exp_Date,
               Curr, Leadtime, DeliveryTerm, Product, Market, status
-       FROM ltsaprice
-       ORDER BY Cftipartno ASC`,
+       FROM ltsa_price
+       ORDER BY Cfti_partno ASC`,
     );
 
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("LTSA Price Data");
 
     worksheet.columns = [
-      { header: "LTSACode", key: "LTSACode", width: 14 },
-      { header: "Customerpartno", key: "Customerpartno", width: 18 },
-      { header: "Cftipartno", key: "Cftipartno", width: 18 },
+      { header: "LTSA_Code", key: "LTSA_Code", width: 14 },
+      { header: "Customer_partno", key: "Customer_partno", width: 18 },
+      { header: "Cfti_partno", key: "Cfti_partno", width: 18 },
       { header: "Description", key: "Description", width: 32 },
       { header: "SplPrice", key: "SplPrice", width: 14 },
-      { header: "StartDate", key: "StartDate", width: 14 },
-      { header: "ExpDate", key: "ExpDate", width: 14 },
+      { header: "Start_Date", key: "Start_Date", width: 14 },
+      { header: "Exp_Date", key: "Exp_Date", width: 14 },
       { header: "Currency", key: "Currency", width: 10 },
       { header: "Leadtime", key: "Leadtime", width: 14 },
       { header: "DeliveryTerm", key: "DeliveryTerm", width: 16 },
@@ -104,16 +102,16 @@ router.get("/download", authMiddleware, async (req, res) => {
 
     rows.forEach((row) => {
       const added = worksheet.addRow({
-        LTSACode: row.LTSACode || "",
-        Customerpartno: row.Customerpartno || "",
-        Cftipartno: row.Cftipartno || "",
+        LTSA_Code: row.LTSA_Code || "",
+        Customer_partno: row.Customer_partno || "",
+        Cfti_partno: row.Cfti_partno || "",
         Description: row.Description || "",
         SplPrice: row.SplPrice || 0,
-        StartDate: row.StartDate
-          ? new Date(row.StartDate).toISOString().split("T")[0]
+        Start_Date: row.Start_Date
+          ? new Date(row.Start_Date).toISOString().split("T")[0]
           : "",
-        ExpDate: row.ExpDate
-          ? new Date(row.ExpDate).toISOString().split("T")[0]
+        Exp_Date: row.Exp_Date
+          ? new Date(row.Exp_Date).toISOString().split("T")[0]
           : "",
         Currency: row.Curr || "USD",
         Leadtime: row.Leadtime || "",
@@ -147,7 +145,7 @@ router.get("/download", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD LTSA price ────────────────────────────────────────────────────────────
+// add LTSA price
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -198,16 +196,13 @@ router.post("/", authMiddleware, async (req, res) => {
   };
 
   try {
-    const [maxRow] = await pool.query("SELECT MAX(Sno) as m FROM ltsaprice");
-    const newSno = (maxRow[0].m || 0) + 1;
     await pool.query(
-      `INSERT INTO ltsaprice
-         (Sno, LTSACode, Customerpartno, Cftipartno, Description,
-          SplPrice, StartDate, ExpDate, Curr, Leadtime,
+      `INSERT INTO ltsa_price
+         (LTSA_Code, Customer_partno, Cfti_partno, Description,
+          SplPrice, Start_Date, Exp_Date, Curr, Leadtime,
           DeliveryTerm, Product, Market, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'Active')`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'Active')`,
       [
-        newSno,
         LTSACode,
         Customerpartno,
         Cftipartno,
@@ -228,7 +223,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT LTSA price ───────────────────────────────────────────────────────────
+// edit LTSA price
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -245,17 +240,19 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   };
 
   try {
-    await pool.query(
-      `UPDATE ltsaprice SET ExpDate=?, Leadtime=?, DeliveryTerm=? WHERE Sno=?`,
+    const [result] = await pool.query(
+      `UPDATE ltsa_price SET Exp_Date=?, Leadtime=?, DeliveryTerm=? WHERE Sno=?`,
       [fmtDate(ExpDate) || null, Leadtime || null, DeliveryTerm || null, sno],
     );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ message: "Record not found." });
     res.json({ success: true, message: "LTSA Price updated successfully!" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ── TOGGLE LTSA status ────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -267,7 +264,7 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status." });
 
   try {
-    await pool.query("UPDATE ltsaprice SET status=? WHERE Sno=?", [
+    await pool.query("UPDATE ltsa_price SET status=? WHERE Sno=?", [
       status,
       sno,
     ]);

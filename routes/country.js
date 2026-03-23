@@ -13,6 +13,8 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
@@ -27,14 +29,13 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-
-// ── GET all (A-Z by Countryname) ──────────────────────────────────────────────
+// all countries
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Countrycode, Countryname, Region, Currency,
-              CurrencyName, Conversionrate, status
-       FROM country ORDER BY Countryname ASC`,
+      `SELECT Sno, Country_code, Country_name, Region, Currency,
+              Currency_Name, Conversion_rate, status
+       FROM country ORDER BY Country_name ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -42,13 +43,13 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Countrycode ───────────────────────────────────────────────
+// duplicate country code check
 router.get("/check", authMiddleware, async (req, res) => {
   const { countrycode } = req.query;
   try {
     if (countrycode) {
       const [rows] = await pool.query(
-        `SELECT Countrycode FROM country WHERE LOWER(Countrycode) = ?`,
+        `SELECT Country_code FROM country WHERE LOWER(Country_code) = ?`,
         [countrycode.toLowerCase()],
       );
       if (rows.length > 0)
@@ -64,7 +65,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD country ───────────────────────────────────────────────────────────────
+// add country
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -80,14 +81,11 @@ router.post("/", authMiddleware, async (req, res) => {
   } = req.body;
 
   if (!Countrycode || !Countryname || !Currency || !Conversionrate)
-    return res
-      .status(400)
-      .json({
-        message:
-          "Country Code, Name, Currency Code and Conversion Rate are required.",
-      });
+    return res.status(400).json({
+      message:
+        "Country Code, Name, Currency Code and Conversion Rate are required.",
+    });
 
-  // Apply casing as per original
   Countrycode = Countrycode.trim().toUpperCase();
   Countryname = Countryname.trim().toUpperCase();
   Region = Region?.trim()
@@ -104,26 +102,21 @@ router.post("/", authMiddleware, async (req, res) => {
   const convRate = parseFloat(Conversionrate) || 0;
 
   try {
-    // Check for existing Countryname at DB level too
     const [existing] = await pool.query(
-      `SELECT Countryname FROM country WHERE UPPER(Countryname) = ?`,
+      `SELECT Country_name FROM country WHERE UPPER(Country_name) = ?`,
       [Countryname],
     );
     if (existing.length > 0)
-      return res
-        .status(409)
-        .json({
-          message: "The Country already exists. Please enter a different one.",
-        });
-
-    const [maxRow] = await pool.query("SELECT MAX(Sno) as maxSno FROM country");
-    const newSno = (maxRow[0].maxSno || 0) + 1;
+      return res.status(409).json({
+        message: "The Country already exists. Please enter a different one.",
+      });
 
     await pool.query(
-      `INSERT INTO country (Sno, Countrycode, Countryname, Region, Currency, CurrencyName, Conversionrate, status)
-       VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO country
+        (Country_code, Country_name, Region, Currency,
+         Currency_Name, Conversion_rate, status)
+       VALUES (?,?,?,?,?,?,?)`,
       [
-        newSno,
         Countrycode,
         Countryname,
         Region,
@@ -139,7 +132,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT country (Countryname + Currency locked, Region + Conversionrate editable) ──
+// edit country
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -148,12 +141,16 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   const { sno } = req.params;
   let { Region, Conversionrate } = req.body;
 
-  Region = Region?.trim() ? Region.trim().toUpperCase() : null;
+  Region = Region?.trim()
+    ? Region.trim()
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+    : null;
   const convRate = parseFloat(Conversionrate) || 0;
 
   try {
     const [result] = await pool.query(
-      `UPDATE country SET Region=?, Conversionrate=? WHERE Sno=?`,
+      `UPDATE country SET Region=?, Conversion_rate=? WHERE Sno=?`,
       [Region, convRate, sno],
     );
     if (result.affectedRows === 0)
@@ -164,7 +161,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status ─────────────────────────────────────────────────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")

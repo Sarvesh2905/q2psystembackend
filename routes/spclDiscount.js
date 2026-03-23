@@ -13,13 +13,15 @@ function authMiddleware(req, res, next) {
     res.status(401).json({ message: "Invalid token" });
   }
 }
+
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[active]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM spcldiscount WHERE status='Active'",
+      "SELECT COUNT(*) AS cnt FROM spcl_discount WHERE status='Active'",
     );
     const [[inactive]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM spcldiscount WHERE status='Inactive'",
+      "SELECT COUNT(*) AS cnt FROM spcl_discount WHERE status='Inactive'",
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -27,11 +29,11 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET all special discount customers (A-Z by Name) ─────────────────────────
+// all special-discount customers
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Name, status FROM spcldiscount ORDER BY Name ASC`,
+      "SELECT Sno, Name, status FROM spcl_discount ORDER BY Name ASC",
     );
     res.json(rows);
   } catch (err) {
@@ -39,18 +41,19 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── GET customer name list for dropdown ───────────────────────────────────────
+// customer list for dropdown
 router.get("/customers", authMiddleware, async (req, res) => {
   try {
     const [customers] = await pool.query(
-      `SELECT customername, Location FROM customer WHERE status='Active' ORDER BY customername ASC`,
+      `SELECT customer_name, Location FROM customer
+       WHERE status='Active' ORDER BY customer_name ASC`,
     );
     res.json(
       customers.map((c) => ({
-        value: c.customername,
+        value: c.customer_name,
         label: c.Location
-          ? `${c.customername} - ${c.Location}`
-          : c.customername,
+          ? `${c.customer_name} - ${c.Location}`
+          : c.customer_name,
       })),
     );
   } catch (err) {
@@ -58,12 +61,12 @@ router.get("/customers", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate name ──────────────────────────────────────────────────────
+// duplicate name check
 router.get("/check", authMiddleware, async (req, res) => {
   const custname = (req.query.custname || "").toLowerCase().replace(/\s+/g, "");
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcldiscount`,
+      "SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcl_discount",
     );
     const exists = rows.some((r) => r.nm === custname);
     if (exists)
@@ -78,7 +81,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD special discount customer ─────────────────────────────────────────────
+// add special-discount customer
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -89,26 +92,19 @@ router.post("/", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Name (Customer) is required." });
 
   try {
-    // Duplicate check
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcldiscount`,
+      "SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcl_discount",
     );
     const normalised = Name.toLowerCase().replace(/\s+/g, "");
-    const exists = rows.some((r) => r.nm === normalised);
-    if (exists)
+    if (rows.some((r) => r.nm === normalised))
       return res.status(409).json({
         message:
           "Special discount with this name already exists. Please enter a different name.",
       });
 
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM spcldiscount",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO spcldiscount (Sno, Name, status) VALUES (?, ?, 'Active')`,
-      [newSno, Name.trim()],
+      "INSERT INTO spcl_discount (Name, status) VALUES (?, 'Active')",
+      [Name.trim()],
     );
     res.json({
       success: true,
@@ -119,7 +115,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── TOGGLE status (checks open quotes before going Inactive) ──────────────────
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -133,18 +129,17 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
 
   try {
     if (status === "Inactive") {
-      // Check open quotes before deactivating (same as original)
       try {
         const [openQuotes] = await pool.query(
-          `SELECT Quotenumber FROM quoteregister
-           WHERE Customername IN (SELECT Name FROM spcldiscount WHERE Sno=?)
-           AND Opportunitystage IN (
-             SELECT Data FROM quotedata WHERE Sno IN (22,24,27,29,30)
-           )`,
+          `SELECT Quote_number FROM quote_register
+           WHERE Customer_name IN (SELECT Name FROM spcl_discount WHERE Sno=?)
+             AND Opportunity_stage IN (
+               SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
+             )`,
           [sno],
         );
         if (openQuotes.length > 0) {
-          const quotenumbers = openQuotes.map((q) => q.Quotenumber).join(", ");
+          const quotenumbers = openQuotes.map((q) => q.Quote_number).join(", ");
           return res.json({
             openquote: true,
             message: `There are Open Quotes with this Customer: ${quotenumbers}`,
@@ -153,7 +148,7 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
       } catch (_) {}
     }
 
-    await pool.query("UPDATE spcldiscount SET status=? WHERE Sno=?", [
+    await pool.query("UPDATE spcl_discount SET status=? WHERE Sno=?", [
       status,
       sno,
     ]);

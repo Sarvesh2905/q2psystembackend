@@ -14,11 +14,11 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ── GET all (A-Z by Industry) ─────────────────────────────────────────────────
+// GET all end industries
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Industry, Description FROM endindustry ORDER BY Industry ASC`,
+      "SELECT Sno, Industry, Description FROM end_industry ORDER BY Industry ASC",
     );
     res.json(rows);
   } catch (err) {
@@ -26,12 +26,24 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── CHECK duplicate Industry (fires on input blur) ────────────────────────────
+// counts
+router.get("/counts", authMiddleware, async (req, res) => {
+  try {
+    const [[total]] = await pool.query(
+      "SELECT COUNT(*) AS cnt FROM end_industry",
+    );
+    res.json({ total: total.cnt });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// CHECK duplicate Industry
 router.get("/check", authMiddleware, async (req, res) => {
   const ind = (req.query.ind || "").toLowerCase().replace(/\s+/g, "");
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM endindustry`,
+      "SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM end_industry",
     );
     const exists = rows.some((r) => r.nm === ind);
     if (exists)
@@ -46,7 +58,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ── ADD ───────────────────────────────────────────────────────────────────────
+// ADD end industry
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -56,13 +68,11 @@ router.post("/", authMiddleware, async (req, res) => {
   if (!Industry || !Industry.trim())
     return res.status(400).json({ message: "Industry is required." });
 
-  // Same as original: ind.upper()
   Industry = Industry.trim().toUpperCase();
 
   try {
-    // Duplicate check
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM endindustry`,
+      "SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM end_industry",
     );
     const normalised = Industry.toLowerCase().replace(/\s+/g, "");
     if (rows.some((r) => r.nm === normalised))
@@ -71,14 +81,9 @@ router.post("/", authMiddleware, async (req, res) => {
           "The End Industry already exists. Please enter a different one.",
       });
 
-    const [maxRow] = await pool.query(
-      "SELECT MAX(Sno) as maxSno FROM endindustry",
-    );
-    const newSno = (maxRow[0].maxSno || 0) + 1;
-
     await pool.query(
-      `INSERT INTO endindustry (Sno, Industry, Description) VALUES (?, ?, ?)`,
-      [newSno, Industry, Description?.trim() || null],
+      "INSERT INTO end_industry (Industry, Description) VALUES (?, ?)",
+      [Industry, Description?.trim() || null],
     );
     res.json({ success: true, message: "End Industry added successfully!" });
   } catch (err) {
@@ -86,7 +91,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// ── EDIT (Industry locked — only Description editable) ────────────────────────
+// EDIT end industry (Description only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -96,10 +101,12 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   const { Description } = req.body;
 
   try {
-    await pool.query(`UPDATE endindustry SET Description=? WHERE Sno=?`, [
-      Description?.trim() || null,
-      sno,
-    ]);
+    const [result] = await pool.query(
+      "UPDATE end_industry SET Description=? WHERE Sno=?",
+      [Description?.trim() || null, sno],
+    );
+    if (result.affectedRows === 0)
+      return res.status(404).json({ message: "Record not found." });
     res.json({ success: true, message: "End Industry updated successfully!" });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
