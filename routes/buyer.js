@@ -33,7 +33,7 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Customer, Buyer_name, Designation, email1, email2,
+      `SELECT Sno, Customer, Buyer_name AS Buyername, Designation, email1, email2,
               contact, Location, Segment, status, Comments
        FROM buyer ORDER BY Customer ASC, Buyer_name ASC`,
     );
@@ -47,7 +47,7 @@ router.get("/", authMiddleware, async (req, res) => {
 router.get("/customers", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT customer_name, Location, customer_country
+      `SELECT customer_name AS customername, Location, customer_country AS customercountry
        FROM customer WHERE status = 'Active' ORDER BY customer_name ASC`,
     );
     res.json(rows);

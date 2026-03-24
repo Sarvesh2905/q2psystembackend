@@ -33,7 +33,10 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Products, Description, Facing_Factory, Prd_group, status
+      `SELECT Sno, Products, Description,
+              Facing_Factory AS FacingFactory,
+              Prd_group      AS Prdgroup,
+              status
        FROM product ORDER BY Products ASC`,
     );
     res.json(rows);

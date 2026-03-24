@@ -33,9 +33,18 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, customer_name, customer_type, customer_country, Address,
-              City, State, Region, Sub_Region, Location, Category,
-              Short_name, Ltsa_code, Segment, status
+      `SELECT Sno,
+              customer_name    AS customername,
+              customer_type    AS customertype,
+              customer_country AS customercountry,
+              Address,
+              City, State, Region,
+              Sub_Region       AS SubRegion,
+              Location,
+              Category,
+              Short_name       AS Shortname,
+              Ltsa_code        AS Ltsacode,
+              Segment, status
        FROM customer ORDER BY customer_name ASC`,
     );
     res.json(rows);

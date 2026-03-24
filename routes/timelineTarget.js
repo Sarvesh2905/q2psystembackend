@@ -18,8 +18,11 @@ function authMiddleware(req, res, next) {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Product, Enquiry, Technicaloffer, Pricedoffer,
-              Pricebookorder, Regret, Cancelled
+      `SELECT Sno, Product, Enquiry,
+              Technical_offer  AS Technicaloffer,
+              Priced_offer     AS Pricedoffer,
+              Price_book_order AS Pricebookorder,
+              Regret, Cancelled
        FROM timeline_target
        ORDER BY Product ASC`,
     );
@@ -103,8 +106,8 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO timeline_target
-         (Product, Enquiry, Technicaloffer, Pricedoffer,
-          Pricebookorder, Regret, Cancelled)
+         (Product, Enquiry, Technical_offer, Priced_offer,
+          Price_book_order, Regret, Cancelled)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         Product.trim(),
@@ -163,8 +166,8 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   try {
     const [result] = await pool.query(
       `UPDATE timeline_target
-       SET Enquiry=?, Technicaloffer=?, Pricedoffer=?,
-           Pricebookorder=?, Regret=?, Cancelled=?
+       SET Enquiry=?, Technical_offer=?, Priced_offer=?,
+           Price_book_order=?, Regret=?, Cancelled=?
        WHERE Sno=?`,
       [
         Number(Enquiry),

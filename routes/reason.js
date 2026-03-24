@@ -18,7 +18,7 @@ function authMiddleware(req, res, next) {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Reason_Code, Description FROM reason ORDER BY Reason_Code ASC`,
+      `SELECT Sno, Reason_Code AS ReasonCode, Description FROM reason ORDER BY Reason_Code ASC`,
     );
     res.json(rows);
   } catch (err) {
