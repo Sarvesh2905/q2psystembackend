@@ -29,13 +29,15 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// all products
+// GET all — alias DB column names to match frontend keys
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Products, Description,
-              FacingFactory,
-              Prdgroup,
+      `SELECT Sno,
+              Products,
+              Description,
+              Facing_Factory AS FacingFactory,
+              Prd_group      AS Prdgroup,
               status
        FROM product ORDER BY Products ASC`,
     );
@@ -45,7 +47,7 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// duplicate check
+// duplicate product check
 router.get("/check", authMiddleware, async (req, res) => {
   const { product } = req.query;
   try {
@@ -67,7 +69,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// add product
+// ADD — frontend sends FacingFactory/Prdgroup, map to DB column names
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -91,7 +93,7 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO product
-         (Products, Description, FacingFactory, status, Image, Prdgroup)
+         (Products, Description, Facing_Factory, status, Image, Prd_group)
        VALUES (?,?,?,?,?,?)`,
       [Products, Description, FacingFactory, "Active", "default.png", Prdgroup],
     );
@@ -105,7 +107,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// edit product (Description only)
+// EDIT (Description only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -150,12 +152,12 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
         [sno],
       );
       if (prod) {
+        // Check for open quotes: Opportunity_stage is not Regret, Cancelled, or Won
         const [openQuotes] = await pool.query(
           `SELECT Quote_number FROM quote_register
            WHERE FIND_IN_SET(?, REPLACE(Product, ', ', ','))
-             AND Opportunity_stage IN (
-               SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
-             )`,
+             AND (Opportunity_stage IS NULL
+               OR UPPER(TRIM(Opportunity_stage)) NOT IN ('REGRET','CANCELLED','WON'))`,
           [prod.Products],
         );
         if (openQuotes.length > 0) {

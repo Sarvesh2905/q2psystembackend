@@ -116,9 +116,19 @@ router.post("/", authMiddleware, async (req, res) => {
         message: "This Email already exists. Please enter a different one.",
       });
 
+    // Auto-generate dept_user_id (e.g. AE007) based on max existing
+    const [maxRow] = await pool.query(
+      `SELECT dept_user_id FROM dept_users ORDER BY Sno DESC LIMIT 1`,
+    );
+    let nextId = "AE001";
+    if (maxRow.length && maxRow[0].dept_user_id) {
+      const lastNum = parseInt(maxRow[0].dept_user_id.replace(/\D/g, "")) || 0;
+      nextId = "AE" + String(lastNum + 1).padStart(3, "0");
+    }
+
     await pool.query(
-      `INSERT INTO dept_users (Username, Email, status) VALUES (?, ?, 'Active')`,
-      [Username, Email.trim().toLowerCase()],
+      `INSERT INTO dept_users (dept_user_id, Username, Email, status) VALUES (?, ?, ?, 'Active')`,
+      [nextId, Username, Email.trim().toLowerCase()],
     );
     res.json({
       success: true,

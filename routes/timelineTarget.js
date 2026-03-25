@@ -26,14 +26,16 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
+// GET all — alias DB column names to match frontend camelCase keys
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Product,
+      `SELECT Sno,
+              Product,
               Enquiry,
-              Technical_offer  AS TechnicalOffer,
-              Priced_offer     AS PricedOffer,
-              Price_book_order AS PriceBookOrder,
+              Technical_offer  AS Technicaloffer,
+              Priced_offer     AS Pricedoffer,
+              Price_book_order AS Pricebookorder,
               Regret,
               Cancelled
        FROM timeline_target ORDER BY Product ASC`,
@@ -44,6 +46,7 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
+// duplicate product check
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.product || "").toLowerCase().trim();
   if (!val) return res.json({ exists: false });
@@ -64,6 +67,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
+// products dropdown
 router.get("/products", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -75,6 +79,7 @@ router.get("/products", authMiddleware, async (req, res) => {
   }
 });
 
+// ADD — frontend sends Technicaloffer/Pricedoffer/Pricebookorder, map to DB column names
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -83,9 +88,9 @@ router.post("/", authMiddleware, async (req, res) => {
   const {
     Product,
     Enquiry,
-    TechnicalOffer,
-    PricedOffer,
-    PriceBookOrder,
+    Technicaloffer,
+    Pricedoffer,
+    Pricebookorder,
     Regret,
     Cancelled,
   } = req.body;
@@ -111,9 +116,9 @@ router.post("/", authMiddleware, async (req, res) => {
       [
         Product.trim(),
         Enquiry || 0,
-        TechnicalOffer || 0,
-        PricedOffer || 0,
-        PriceBookOrder || 0,
+        Technicaloffer || 0,
+        Pricedoffer || 0,
+        Pricebookorder || 0,
         Regret || 0,
         Cancelled || 0,
       ],
@@ -124,6 +129,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
+// EDIT — same mapping
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -132,9 +138,9 @@ router.put("/:sno", authMiddleware, async (req, res) => {
   const { sno } = req.params;
   const {
     Enquiry,
-    TechnicalOffer,
-    PricedOffer,
-    PriceBookOrder,
+    Technicaloffer,
+    Pricedoffer,
+    Pricebookorder,
     Regret,
     Cancelled,
   } = req.body;
@@ -147,9 +153,9 @@ router.put("/:sno", authMiddleware, async (req, res) => {
        WHERE Sno=?`,
       [
         Enquiry || 0,
-        TechnicalOffer || 0,
-        PricedOffer || 0,
-        PriceBookOrder || 0,
+        Technicaloffer || 0,
+        Pricedoffer || 0,
+        Pricebookorder || 0,
         Regret || 0,
         Cancelled || 0,
         sno,

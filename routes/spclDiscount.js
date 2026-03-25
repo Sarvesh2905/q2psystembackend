@@ -115,7 +115,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// toggle status ✅ FIXED: quote_register + quote_data
+// toggle status
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -129,16 +129,16 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   try {
     if (status === "Inactive") {
       try {
+        // Check for open quotes: Opportunity_stage not Regret/Cancelled/Won
         const [openQuotes] = await pool.query(
-          `SELECT Quotenumber FROM quote_register
-           WHERE Customername IN (SELECT Name FROM spcl_discount WHERE Sno=?)
-           AND Opportunitystage IN (
-             SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
-           )`,
+          `SELECT Quote_number FROM quote_register
+           WHERE Customer_name IN (SELECT Name FROM spcl_discount WHERE Sno=?)
+             AND (Opportunity_stage IS NULL
+               OR UPPER(TRIM(Opportunity_stage)) NOT IN ('REGRET','CANCELLED','WON'))`,
           [sno],
         );
         if (openQuotes.length > 0) {
-          const quotenumbers = openQuotes.map((q) => q.Quotenumber).join(", ");
+          const quotenumbers = openQuotes.map((q) => q.Quote_number).join(", ");
           return res.json({
             openquote: true,
             message: `There are Open Quotes with this Customer: ${quotenumbers}`,
