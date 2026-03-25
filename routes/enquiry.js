@@ -34,13 +34,13 @@ function capitalizeWords(s) {
     .join(" ");
 }
 
+// ─── DROPDOWNS ───────────────────────────────────────────────────────────────
+
 router.get("/getcustomers", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT customer_name AS customername, Location,
-              customer_country AS customercountry,
-              customer_type AS customertype
-       FROM customer WHERE status='Active' ORDER BY customer_name ASC`,
+    const rows = await pool.query(
+      `SELECT customername, Location, customercountry, customertype, Category AS custcategory
+       FROM customer WHERE status='Active' ORDER BY customername ASC`,
     );
     res.json(
       rows.map((r) => ({
@@ -48,11 +48,11 @@ router.get("/getcustomers", authMiddleware, async (req, res) => {
         location: r.Location,
         country: r.customercountry,
         custtype: r.customertype,
+        custcategory: r.custcategory,
         currency: "",
       })),
     );
   } catch (err) {
-    console.error("getcustomers", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -60,11 +60,13 @@ router.get("/getcustomers", authMiddleware, async (req, res) => {
 router.get("/getcustomerinfo", authMiddleware, async (req, res) => {
   const { customername } = req.query;
   try {
-    const [rows] = await pool.query(
-      `SELECT customer_country AS customercountry,
-              customer_type AS customertype,
-              Location
-       FROM customer WHERE customer_name=? AND status='Active' LIMIT 1`,
+    // Get customer info + currency from country master
+    const rows = await pool.query(
+      `SELECT c.customercountry, c.customertype, c.Location, c.Category,
+              co.Currency
+       FROM customer c
+       LEFT JOIN country co ON UPPER(TRIM(co.Countryname)) = UPPER(TRIM(c.customercountry))
+       WHERE c.customername=? AND c.status='Active' LIMIT 1`,
       [customername],
     );
     if (!rows.length)
@@ -73,16 +75,17 @@ router.get("/getcustomerinfo", authMiddleware, async (req, res) => {
         custtype: "",
         location: "",
         currency: "",
+        custcategory: "",
       });
     const r = rows[0];
     res.json({
       country: r.customercountry,
       custtype: r.customertype,
       location: r.Location,
-      currency: "",
+      currency: r.Currency || "",
+      custcategory: r.Category || "",
     });
   } catch (err) {
-    console.error("getcustomerinfo", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -90,77 +93,68 @@ router.get("/getcustomerinfo", authMiddleware, async (req, res) => {
 router.get("/getbuyers", authMiddleware, async (req, res) => {
   const { customer } = req.query;
   try {
-    const [rows] = await pool.query(
-      `SELECT Buyer_name AS Buyername FROM buyer
-       WHERE Customer=? AND Buyer_name IS NOT NULL AND status='Active'`,
+    const rows = await pool.query(
+      `SELECT Buyername FROM buyer WHERE Customer=? AND Buyername IS NOT NULL AND status='Active'`,
       [customer],
     );
     res.json(rows.map((r) => r.Buyername));
   } catch (err) {
-    console.error("getbuyers", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getappengineers", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT dept_user_id AS deptuserid FROM dept_users
-       WHERE status='Active' ORDER BY dept_user_id ASC`,
+    const rows = await pool.query(
+      `SELECT deptuserid FROM deptusers WHERE status='Active' ORDER BY deptuserid ASC`,
     );
     res.json(rows.map((r) => r.deptuserid));
   } catch (err) {
-    console.error("getappengineers", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getsalesmanagers", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT sales_contact_name AS salescontactname FROM sales_contact
-       WHERE status='Active' ORDER BY sales_contact_name ASC`,
+    const rows = await pool.query(
+      `SELECT salescontactname FROM salescontact WHERE status='Active' ORDER BY salescontactname ASC`,
     );
     res.json(rows.map((r) => r.salescontactname));
   } catch (err) {
-    console.error("getsalesmanagers", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getrfqt", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Data FROM quote_data WHERE Type='Opportunitytype' ORDER BY Data ASC`,
+    const rows = await pool.query(
+      `SELECT Data FROM quotedata WHERE Type='Opportunitytype' AND Status='Active' ORDER BY Data ASC`,
     );
     res.json(rows.map((r) => r.Data));
   } catch (err) {
-    console.error("getrfqt", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getqt", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Data FROM quote_data WHERE Type='Rfqcategory' ORDER BY Data ASC`,
+    const rows = await pool.query(
+      `SELECT Data FROM quotedata WHERE Type='Rfqcategory' AND Status='Active' ORDER BY Data ASC`,
     );
     res.json(rows.map((r) => r.Data));
   } catch (err) {
-    console.error("getqt", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getqs", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Data FROM quote_data
-       WHERE Type='Quotestage' AND Sno > 8 ORDER BY Sno ASC`,
+    // Only Enquiry stage visible on creation (Sno=8 from screenshot)
+    const rows = await pool.query(
+      `SELECT Data FROM quotedata WHERE Type='Quotestage' AND Sno=8 ORDER BY Sno ASC`,
     );
     res.json(rows.map((r) => capitalizeWords(r.Data)));
   } catch (err) {
-    console.error("getqs", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -171,52 +165,42 @@ router.get("/getstatus", authMiddleware, async (req, res) => {
     let rows;
     const qs = (quotestage || "").toUpperCase();
     if (qs === "ENQUIRY") {
-      [rows] = await pool.query(
-        `SELECT Data FROM quote_data
-         WHERE Type='Opportunitystage' AND Status='Active' AND Sno > 30
-         ORDER BY Sno ASC`,
+      rows = await pool.query(
+        `SELECT Data FROM quotedata WHERE Type='Opportunitystage' AND Status='Active' AND Sno=30 ORDER BY Sno ASC`,
       );
-    } else if (qs === "TECHNICAL OFFER" || qs === "PRICED OFFER") {
-      [rows] = await pool.query(
-        `SELECT Data FROM quote_data
-         WHERE Type='Opportunitystage' AND Status='Active'
-         AND Sno IN (22,23,24,25,26) ORDER BY Sno ASC`,
+    } else if (["TECHNICAL OFFER", "PRICED OFFER"].includes(qs)) {
+      rows = await pool.query(
+        `SELECT Data FROM quotedata WHERE Type='Opportunitystage' AND Status='Active' AND Sno IN (22,23,24,25,26) ORDER BY Sno ASC`,
       );
     } else {
-      [rows] = await pool.query(
-        `SELECT Data FROM quote_data
-         WHERE Type='Opportunitystage' AND Status='Active'
-         ORDER BY Sno ASC`,
+      rows = await pool.query(
+        `SELECT Data FROM quotedata WHERE Type='Opportunitystage' AND Status='Active' ORDER BY Sno ASC`,
       );
     }
     res.json(rows.map((r) => capitalizeWords(r.Data)));
   } catch (err) {
-    console.error("getstatus", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getendcountries", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Country_name AS Countryname FROM country
-       WHERE status='Active' ORDER BY Country_name ASC`,
+    const rows = await pool.query(
+      `SELECT Countryname FROM country WHERE status='Active' ORDER BY Countryname ASC`,
     );
     res.json(rows.map((r) => r.Countryname));
   } catch (err) {
-    console.error("getendcountries", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getindustries", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Industry FROM end_industry ORDER BY Industry ASC`,
+    const rows = await pool.query(
+      `SELECT Industry FROM endindustry ORDER BY Industry ASC`,
     );
     res.json(rows.map((r) => r.Industry));
   } catch (err) {
-    console.error("getindustries", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -224,48 +208,42 @@ router.get("/getindustries", authMiddleware, async (req, res) => {
 router.get("/getenduse", authMiddleware, async (req, res) => {
   const { endind } = req.query;
   try {
-    const [rows] = await pool.query(
-      `SELECT Description FROM end_industry WHERE LOWER(Industry)=?`,
+    const rows = await pool.query(
+      `SELECT Description FROM endindustry WHERE LOWER(Industry)=?`,
       [endind?.toLowerCase()],
     );
-    res.json({ enduse: rows[0]?.Description });
+    res.json({ enduse: rows[0]?.Description || "" });
   } catch (err) {
-    console.error("getenduse", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// Facing factories from quotedata table (Type=Facing_factory)
 router.get("/getff", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT DISTINCT Facing_Factory AS FacingFactory FROM product
-       WHERE status='Active'
-       AND Facing_Factory IS NOT NULL AND Facing_Factory != ''
-       ORDER BY Facing_Factory ASC`,
+    const rows = await pool.query(
+      `SELECT Data FROM quotedata WHERE Type='Facing_factory' AND Status='Active' ORDER BY Data ASC`,
     );
-    res.json(rows.map((r) => r.FacingFactory).filter(Boolean));
+    res.json(rows.map((r) => r.Data).filter(Boolean));
   } catch (err) {
-    console.error("getff", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// Products filtered by facing factory
 router.get("/getproducts", authMiddleware, async (req, res) => {
   const { facingfactory } = req.query;
   try {
     let rows;
     if (facingfactory) {
-      [rows] = await pool.query(
-        `SELECT Products, Image, Prd_group AS Prdgroup FROM product
-         WHERE status='Active'
-         AND UPPER(TRIM(Facing_Factory))=UPPER(TRIM(?))
-         ORDER BY Products ASC`,
+      rows = await pool.query(
+        `SELECT Products, Image, Prdgroup FROM product 
+         WHERE status='Active' AND UPPER(TRIM(FacingFactory))=UPPER(TRIM(?)) ORDER BY Products ASC`,
         [facingfactory],
       );
     } else {
-      [rows] = await pool.query(
-        `SELECT Products, Image, Prd_group AS Prdgroup FROM product
-         WHERE status='Active' ORDER BY Products ASC`,
+      rows = await pool.query(
+        `SELECT Products, Image, Prdgroup FROM product WHERE status='Active' ORDER BY Products ASC`,
       );
     }
     res.json(
@@ -278,151 +256,160 @@ router.get("/getproducts", authMiddleware, async (req, res) => {
         })),
     );
   } catch (err) {
-    console.error("getproducts", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
 router.get("/getreasons", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Reason_Code AS ReasonCode FROM reason ORDER BY Reason_Code ASC`,
+    const rows = await pool.query(
+      `SELECT ReasonCode FROM reason ORDER BY ReasonCode ASC`,
     );
     res.json(rows.map((r) => r.ReasonCode));
   } catch (err) {
-    console.error("getreasons", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-router.get("/fetchsno", authMiddleware, async (req, res) => {
+// ─── ADD FACING FACTORY DYNAMICALLY ──────────────────────────────────────────
+router.post("/addfacingfactory", authMiddleware, async (req, res) => {
+  const role = req.user.role;
+  if (!["Admin", "Manager"].includes(role))
+    return res.status(403).json({ message: "Access denied." });
+  const { value } = req.body;
+  if (!value?.trim())
+    return res.status(400).json({ message: "Value is required." });
+  const val = value.trim().toUpperCase();
   try {
-    const currentYear = new Date().getFullYear();
-    const [rows] = await pool.query(
-      `SELECT COUNT(Quote_number) as cnt,
-              ROUND(MAX(CAST(SUBSTRING(Quote_number,9,4) AS UNSIGNED)),0) as sno
-       FROM quote_register
-       WHERE SUBSTRING(RFQ_REG_Date,1,4)=?`,
-      [String(currentYear)],
+    const existing = await pool.query(
+      `SELECT Sno FROM quotedata WHERE Type='Facing_factory' AND UPPER(TRIM(Data))=?`,
+      [val],
     );
-    const cnt = Number(rows[0].cnt) || 0;
-    const sno = Number(rows[0].sno) || 0;
-    const next = !cnt && sno === 0 ? 1 : sno + 1;
-    const quoteNumber = `R${currentYear}${String(next).padStart(4, "0")}`;
-    res.json({ sno: next, quoteNumber });
+    if (existing.length)
+      return res
+        .status(409)
+        .json({ message: "Facing Factory already exists." });
+    await pool.query(
+      `INSERT INTO quotedata (Data, Type, Status) VALUES (?, 'Facing_factory', 'Active')`,
+      [val],
+    );
+    res.json({ success: true, message: "Facing Factory added successfully!" });
   } catch (err) {
-    console.error("fetchsno", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// ─── ADD OPPORTUNITY TYPE DYNAMICALLY ────────────────────────────────────────
+router.post("/addopportunitytype", authMiddleware, async (req, res) => {
+  const role = req.user.role;
+  if (!["Admin", "Manager"].includes(role))
+    return res.status(403).json({ message: "Access denied." });
+  const { value } = req.body;
+  if (!value?.trim())
+    return res.status(400).json({ message: "Value is required." });
+  const val = value.trim().toUpperCase();
+  try {
+    const existing = await pool.query(
+      `SELECT Sno FROM quotedata WHERE Type='Opportunitytype' AND UPPER(TRIM(Data))=?`,
+      [val],
+    );
+    if (existing.length)
+      return res
+        .status(409)
+        .json({ message: "Opportunity Type already exists." });
+    await pool.query(
+      `INSERT INTO quotedata (Data, Type, Status) VALUES (?, 'Opportunitytype', 'Active')`,
+      [val],
+    );
+    res.json({
+      success: true,
+      message: "Opportunity Type added successfully!",
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ─── QUOTE NUMBER GENERATION (called on Save) ────────────────────────────────
+// Legacy = Schroedahl factory → prefix L
+// Regular = CFTI / RTK and others → prefix R
+// Format: L/R + YY + MM + DD + "-" + 4-digit series + "-" + 2-letter AE prefix
+// Separate running series for L and R
+async function generateQuoteNumber(facingFactory, deptuser, date, conn) {
+  const isLegacy = facingFactory?.toUpperCase() === "SCHROEDAHL";
+  const prefix = isLegacy ? "L" : "R";
+
+  // Date part
+  const d = date ? new Date(date) : new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const datePart = `${yy}${mm}${dd}`;
+
+  // 2-letter AE prefix from deptuserid (e.g. "KARTHIK-KS" → "KS", "NITHYA-TN" → "TN")
+  let aePrefix = "XX";
+  if (deptuser) {
+    const parts = deptuser.split("-");
+    if (parts.length >= 2)
+      aePrefix = parts[parts.length - 1].substring(0, 2).toUpperCase();
+    else aePrefix = deptuser.substring(0, 2).toUpperCase();
+  }
+
+  // Get next series number for this prefix (L or R) — global running series per type
+  const rows = await conn.query(
+    `SELECT MAX(CAST(SUBSTRING(Quotenumber, 9, 4) AS UNSIGNED)) AS maxsno 
+     FROM quoteregister WHERE SUBSTRING(Quotenumber,1,1)=?`,
+    [prefix],
+  );
+  const maxSno = Number(rows[0]?.maxsno) || 0;
+  const nextSno = String(maxSno + 1).padStart(4, "0");
+
+  return `${prefix}${datePart}-${nextSno}-${aePrefix}`;
+}
+
+// ─── GET ALL ENQUIRIES ────────────────────────────────────────────────────────
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT Sno,
-              Quote_number         AS Quotenumber,
-              Rev,
-              RFQ_REG_Date         AS RFQREGDate,
-              Sales_contact        AS Salescontact,
-              Dept_user            AS Deptuser,
-              Customer_name        AS Customername,
-              Customer_type        AS Customertype,
-              Customer_Country     AS CustomerCountry,
-              Buyer_name           AS Buyername,
-              Group_name           AS Groupname,
-              Currency,
-              RFQ_Type             AS RFQType,
-              Project_name         AS Projectname,
-              End_user_name        AS Endusername,
-              End_Country          AS EndCountry,
-              End_Industry         AS EndIndustry,
-              RFQ_reference        AS RFQreference,
-              RFQ_Date             AS RFQDate,
-              RFQ_Category         AS RFQCategory,
-              Quote_stage          AS Quotestage,
-              Quote_submitted_date AS Quotesubmitteddate,
-              Facing_factory       AS Facingfactory,
-              Product,
-              Total_line_items     AS Totallineitems,
-              Win_prob             AS Winprob,
-              Opportunity_stage    AS Opportunitystage,
-              Expected_order_date  AS Expectedorderdate,
-              Eff_Enq_Date         AS EffEnqDate,
-              Customer_due_Date    AS CustomerdueDate,
-              Proposed_due_Date    AS ProposeddueDate,
-              Priority,
-              Comments,
-              Quoted_price         AS Quotedprice,
-              Quote_value_USD      AS QuotevalueUSD,
-              CFTI_quoted_GM       AS CFTIquotedGM,
-              Reason,
-              Revised_Date         AS RevisedDate,
-              product_change       AS productchange
-       FROM quote_register ORDER BY Sno DESC`,
+    const rows = await pool.query(
+      `SELECT Sno, Quotenumber, Rev, RFQREGDate, Salescontact, Deptuser,
+              Customername, Customertype, CustomerCountry, Buyername, Groupname,
+              Currency, RFQType, Projectname, Endusername, EndCountry, EndIndustry,
+              RFQreference, RFQDate, RFQCategory, Quotestage, Quotesubmitteddate,
+              Facingfactory, Product, Totallineitems, Winprob, Opportunitystage,
+              Expectedorderdate, EffEnqDate, CustomerdueDate, ProposeddueDate,
+              Priority, Comments, Quotedprice, QuotevalueUSD, CFTIquotedGM,
+              Reason, RevisedDate, productchange
+       FROM quoteregister ORDER BY Sno DESC`,
     );
     res.json(rows);
   } catch (err) {
-    console.error("GET /", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// ─── GET SINGLE ENQUIRY ───────────────────────────────────────────────────────
 router.get("/:quotenumber", authMiddleware, async (req, res) => {
   const { quotenumber } = req.params;
   try {
-    const [rows] = await pool.query(
-      `SELECT *,
-              Quote_number         AS Quotenumber,
-              RFQ_REG_Date         AS RFQREGDate,
-              Sales_contact        AS Salescontact,
-              Dept_user            AS Deptuser,
-              Customer_name        AS Customername,
-              Customer_type        AS Customertype,
-              Customer_Country     AS CustomerCountry,
-              Buyer_name           AS Buyername,
-              Group_name           AS Groupname,
-              RFQ_Type             AS RFQType,
-              Project_name         AS Projectname,
-              End_user_name        AS Endusername,
-              End_Country          AS EndCountry,
-              End_Industry         AS EndIndustry,
-              RFQ_reference        AS RFQreference,
-              RFQ_Date             AS RFQDate,
-              RFQ_Category         AS RFQCategory,
-              Quote_stage          AS Quotestage,
-              Quote_submitted_date AS Quotesubmitteddate,
-              Facing_factory       AS Facingfactory,
-              Total_line_items     AS Totallineitems,
-              Win_prob             AS Winprob,
-              Opportunity_stage    AS Opportunitystage,
-              Expected_order_date  AS Expectedorderdate,
-              Eff_Enq_Date         AS EffEnqDate,
-              Customer_due_Date    AS CustomerdueDate,
-              Proposed_due_Date    AS ProposeddueDate,
-              Quoted_price         AS Quotedprice,
-              Quote_value_USD      AS QuotevalueUSD,
-              CFTI_quoted_GM       AS CFTIquotedGM,
-              Revised_Date         AS RevisedDate,
-              product_change       AS productchange
-       FROM quote_register WHERE Quote_number=? LIMIT 1`,
+    const rows = await pool.query(
+      `SELECT * FROM quoteregister WHERE Quotenumber=? LIMIT 1`,
       [quotenumber],
     );
     if (!rows.length)
       return res.status(404).json({ message: "Enquiry not found." });
     res.json(rows[0]);
   } catch (err) {
-    console.error("GET /:quotenumber", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
+// ─── ADD ENQUIRY (quote number generated here on save) ────────────────────────
 router.post("/submit", authMiddleware, async (req, res) => {
   const role = req.user.role;
-  if (role !== "Admin" && role !== "Manager")
+  if (!["Admin", "Manager"].includes(role))
     return res.status(403).json({ message: "Access denied." });
 
   const {
-    Quotenumber,
     RFQREGDate,
     Salescontact,
     Deptuser,
@@ -441,7 +428,6 @@ router.post("/submit", authMiddleware, async (req, res) => {
     RFQDate,
     RFQCategory,
     Quotestage,
-    Quotesubmitteddate,
     Facingfactory,
     Product,
     Totallineitems,
@@ -455,25 +441,31 @@ router.post("/submit", authMiddleware, async (req, res) => {
     Comments,
   } = req.body;
 
-  if (!Quotenumber || !Customername || !RFQDate || !Deptuser || !Salescontact)
+  if (!Customername || !RFQDate || !Deptuser || !Salescontact || !Facingfactory)
     return res.status(400).json({ message: "Required fields missing." });
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
+    // Generate quote number based on facing factory
+    const quoteNumber = await generateQuoteNumber(
+      Facingfactory,
+      Deptuser,
+      RFQREGDate,
+      conn,
+    );
+
     await conn.query(
-      `INSERT INTO quote_register
-        (Quote_number, Rev, RFQ_REG_Date, Sales_contact, Dept_user,
-         Customer_name, Customer_type, Customer_Country, Buyer_name,
-         Group_name, Currency, RFQ_Type, Project_name, End_user_name,
-         End_Country, End_Industry, RFQ_reference, RFQ_Date, RFQ_Category,
-         Quote_stage, Quote_submitted_date, Facing_factory, Product,
-         Total_line_items, Win_prob, Opportunity_stage, Expected_order_date,
-         Eff_Enq_Date, Customer_due_Date, Proposed_due_Date, Priority, Comments)
+      `INSERT INTO quoteregister 
+        (Quotenumber, Rev, RFQREGDate, Salescontact, Deptuser, Customername, Customertype,
+         CustomerCountry, Buyername, Groupname, Currency, RFQType, Projectname, Endusername,
+         EndCountry, EndIndustry, RFQreference, RFQDate, RFQCategory, Quotestage,
+         Quotesubmitteddate, Facingfactory, Product, Totallineitems, Winprob, Opportunitystage,
+         Expectedorderdate, EffEnqDate, CustomerdueDate, ProposeddueDate, Priority, Comments)
        VALUES (?,0,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        Quotenumber,
+        quoteNumber,
         parseDate(RFQREGDate),
         Salescontact || null,
         Deptuser || null,
@@ -492,7 +484,7 @@ router.post("/submit", authMiddleware, async (req, res) => {
         parseDate(RFQDate),
         RFQCategory || null,
         Quotestage || null,
-        parseDate(Quotesubmitteddate),
+        null, // Quotesubmitteddate frozen on creation
         Facingfactory ? Facingfactory.toUpperCase() : null,
         Array.isArray(Product) ? Product.join(", ") : Product || null,
         Totallineitems || null,
@@ -507,53 +499,39 @@ router.post("/submit", authMiddleware, async (req, res) => {
       ],
     );
 
-    if (RFQType) {
-      const rfqUpper = RFQType.toUpperCase();
-      const [ex] = await conn.query(
-        `SELECT Sno FROM quote_data
-         WHERE Data=? AND Type='Opportunitytype'`,
-        [rfqUpper],
-      );
-      if (!ex.length)
-        await conn.query(
-          `INSERT INTO quote_data (Data, Type, Status)
-           VALUES (?, 'Opportunitytype', 'Active')`,
-          [rfqUpper],
-        );
-    }
-
+    // Insert into quotetimeline per product
     const products = Array.isArray(Product)
       ? Product
       : (Product || "")
           .split(",")
           .map((p) => p.trim())
           .filter(Boolean);
-
     for (const prod of products) {
       await conn.query(
-        `INSERT INTO quote_timeline
-          (Quote_number, Dept_user, RFQ_Date, Product)
-         VALUES (?, ?, ?, ?)`,
-        [Quotenumber, Deptuser, parseDate(RFQDate), prod],
+        `INSERT INTO quotetimeline (Quotenumber, Deptuser, RFQDate, Product) VALUES (?,?,?,?)`,
+        [quoteNumber, Deptuser, parseDate(RFQDate), prod],
       );
     }
 
     await conn.commit();
-    res.json({ success: true, message: "Enquiry registered successfully!" });
+    res.json({
+      success: true,
+      message: "Enquiry registered successfully!",
+      quoteNumber,
+    });
   } catch (err) {
     await conn.rollback();
-    console.error("POST /submit", err);
     res.status(500).json({ message: "Server error", detail: err.message });
   } finally {
     conn.release();
   }
 });
 
+// ─── UPDATE ENQUIRY ───────────────────────────────────────────────────────────
 router.put("/:quotenumber", authMiddleware, async (req, res) => {
   const role = req.user.role;
-  if (role !== "Admin" && role !== "Manager")
+  if (!["Admin", "Manager"].includes(role))
     return res.status(403).json({ message: "Access denied." });
-
   const { quotenumber } = req.params;
   const {
     RFQREGDate,
@@ -594,9 +572,8 @@ router.put("/:quotenumber", authMiddleware, async (req, res) => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-
-    const [existing] = await conn.query(
-      `SELECT Quote_stage, Rev FROM quote_register WHERE Quote_number=?`,
+    const existing = await conn.query(
+      `SELECT * FROM quoteregister WHERE Quotenumber=?`,
       [quotenumber],
     );
     if (!existing.length) {
@@ -604,82 +581,68 @@ router.put("/:quotenumber", authMiddleware, async (req, res) => {
       return res.status(404).json({ message: "Enquiry not found." });
     }
 
-    const rev = parseInt(revision) || 0;
+    let rev = parseInt(revision) || 0;
+    const r = existing[0];
 
-    const [cur] = await conn.query(
-      `SELECT * FROM quote_register WHERE Quote_number=?`,
-      [quotenumber],
+    // Save to history
+    await conn.query(
+      `INSERT INTO quoteregisterhistory 
+        (Quotenumber,Rev,RFQREGDate,Salescontact,Deptuser,Customername,Customertype,CustomerCountry,
+         Buyername,Groupname,Currency,RFQType,Projectname,Endusername,EndCountry,EndIndustry,
+         RFQreference,RFQDate,RFQCategory,EffEnqDate,CustomerdueDate,ProposeddueDate,Quotestage,
+         Quotesubmitteddate,Facingfactory,Product,Totallineitems,Quotedprice,QuotevalueUSD,Winprob,
+         CFTIquotedGM,Opportunitystage,Comments,Expectedorderdate,RevisedDate,Reason,Priority,productchange)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        r.Quotenumber,
+        r.Rev,
+        r.RFQREGDate,
+        r.Salescontact,
+        r.Deptuser,
+        r.Customername,
+        r.Customertype,
+        r.CustomerCountry,
+        r.Buyername,
+        r.Groupname,
+        r.Currency,
+        r.RFQType,
+        r.Projectname,
+        r.Endusername,
+        r.EndCountry,
+        r.EndIndustry,
+        r.RFQreference,
+        r.RFQDate,
+        r.RFQCategory,
+        r.EffEnqDate,
+        r.CustomerdueDate,
+        r.ProposeddueDate,
+        r.Quotestage,
+        r.Quotesubmitteddate,
+        r.Facingfactory,
+        r.Product,
+        r.Totallineitems,
+        r.Quotedprice || 0,
+        r.QuotevalueUSD || 0,
+        r.Winprob,
+        r.CFTIquotedGM || 0,
+        r.Opportunitystage,
+        r.Comments,
+        r.Expectedorderdate,
+        r.RevisedDate,
+        r.Reason,
+        r.Priority,
+        r.productchange,
+      ],
     );
-    if (cur.length) {
-      const r = cur[0];
-      await conn.query(
-        `INSERT INTO quote_register_history
-          (Quote_number, Rev, RFQ_REG_Date, Sales_contact, Dept_user,
-           Customer_name, Customer_type, Customer_Country, Buyer_name,
-           Group_name, Currency, RFQ_Type, Project_name, End_user_name,
-           End_Country, End_Industry, RFQ_reference, RFQ_Date, RFQ_Category,
-           Eff_Enq_Date, Customer_due_Date, Proposed_due_Date, Quote_stage,
-           Quote_submitted_date, Facing_factory, Product, Total_line_items,
-           Quoted_price, Quote_value_USD, Win_prob, CFTI_quoted_GM,
-           Opportunity_stage, Comments, Expected_order_date, Revised_Date,
-           Reason, Priority, product_change)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          r.Quote_number,
-          r.Rev,
-          r.RFQ_REG_Date,
-          r.Sales_contact,
-          r.Dept_user,
-          r.Customer_name,
-          r.Customer_type,
-          r.Customer_Country,
-          r.Buyer_name,
-          r.Group_name,
-          r.Currency,
-          r.RFQ_Type,
-          r.Project_name,
-          r.End_user_name,
-          r.End_Country,
-          r.End_Industry,
-          r.RFQ_reference,
-          r.RFQ_Date,
-          r.RFQ_Category,
-          r.Eff_Enq_Date,
-          r.Customer_due_Date,
-          r.Proposed_due_Date,
-          r.Quote_stage,
-          r.Quote_submitted_date,
-          r.Facing_factory,
-          r.Product,
-          r.Total_line_items,
-          r.Quoted_price || 0,
-          r.Quote_value_USD || 0,
-          r.Win_prob,
-          r.CFTI_quoted_GM || 0,
-          r.Opportunity_stage,
-          r.Comments,
-          r.Expected_order_date,
-          r.Revised_Date,
-          r.Reason,
-          r.Priority,
-          r.product_change,
-        ],
-      );
-    }
 
     await conn.query(
-      `UPDATE quote_register SET
-        RFQ_REG_Date=?, Sales_contact=?, Dept_user=?,
-        Customer_name=?, Customer_type=?, Customer_Country=?,
-        Buyer_name=?, Group_name=?, Currency=?, RFQ_Type=?,
-        Project_name=?, End_user_name=?, End_Country=?, End_Industry=?,
-        RFQ_reference=?, RFQ_Date=?, RFQ_Category=?, Quote_stage=?,
-        Quote_submitted_date=?, Facing_factory=?, Product=?,
-        Total_line_items=?, Win_prob=?, Opportunity_stage=?,
-        Expected_order_date=?, Eff_Enq_Date=?, Customer_due_Date=?,
-        Proposed_due_Date=?, Priority=?, Comments=?,
-        Reason=?, Revised_Date=?, Rev=?
-       WHERE Quote_number=?`,
+      `UPDATE quoteregister SET
+        RFQREGDate=?,Salescontact=?,Deptuser=?,Customername=?,Customertype=?,CustomerCountry=?,
+        Buyername=?,Groupname=?,Currency=?,RFQType=?,Projectname=?,Endusername=?,EndCountry=?,
+        EndIndustry=?,RFQreference=?,RFQDate=?,RFQCategory=?,Quotestage=?,Quotesubmitteddate=?,
+        Facingfactory=?,Product=?,Totallineitems=?,Winprob=?,Opportunitystage=?,Expectedorderdate=?,
+        EffEnqDate=?,CustomerdueDate=?,ProposeddueDate=?,Priority=?,Comments=?,Reason=?,RevisedDate=?,Rev=?
+       WHERE Quotenumber=?`,
       [
         parseDate(RFQREGDate),
         Salescontact || null,
@@ -722,47 +685,37 @@ router.put("/:quotenumber", authMiddleware, async (req, res) => {
     res.json({ success: true, message: "Enquiry updated successfully!" });
   } catch (err) {
     await conn.rollback();
-    console.error("PUT /:quotenumber", err);
     res.status(500).json({ message: "Server error", detail: err.message });
   } finally {
     conn.release();
   }
 });
 
+// ─── GENERATE QUOTE (timeline update) ────────────────────────────────────────
 router.post("/generate-quote", authMiddleware, async (req, res) => {
   const { quotenumber } = req.body;
   if (!quotenumber)
     return res.status(400).json({ message: "Quote number is required." });
-
   try {
-    const [rows] = await pool.query(
-      `SELECT * FROM quote_register WHERE Quote_number=? LIMIT 1`,
+    const rows = await pool.query(
+      `SELECT * FROM quoteregister WHERE Quotenumber=? LIMIT 1`,
       [quotenumber],
     );
     if (!rows.length)
       return res.status(404).json({ message: "Enquiry not found." });
-
     const r = rows[0];
-
-    const [existing] = await pool.query(
-      `SELECT Sno FROM quote_timeline
-       WHERE Quote_number=? AND Enquiry='Y' LIMIT 1`,
+    const existing = await pool.query(
+      `SELECT Sno FROM quotetimeline WHERE Quotenumber=? AND Enquiry='Y' LIMIT 1`,
       [quotenumber],
     );
     if (existing.length)
-      return res.status(409).json({
-        message: "Quote already generated for this enquiry.",
-      });
-
+      return res.status(409).json({ message: "Quote already generated." });
     await pool.query(
-      `UPDATE quote_timeline
-       SET Enquiry='Y', Last_updated_date=CURDATE()
-       WHERE Quote_number=?`,
+      `UPDATE quotetimeline SET Enquiry='Y', Lastupdateddate=CURDATE() WHERE Quotenumber=?`,
       [quotenumber],
     );
-
-    const [updated] = await pool.query(
-      `SELECT Sno FROM quote_timeline WHERE Quote_number=?`,
+    const updated = await pool.query(
+      `SELECT Sno FROM quotetimeline WHERE Quotenumber=?`,
       [quotenumber],
     );
     if (!updated.length) {
@@ -772,17 +725,13 @@ router.post("/generate-quote", authMiddleware, async (req, res) => {
         .filter(Boolean);
       for (const prod of products) {
         await pool.query(
-          `INSERT INTO quote_timeline
-            (Quote_number, Dept_user, RFQ_Date, Enquiry, Product)
-           VALUES (?, ?, ?, 'Y', ?)`,
-          [r.Quote_number, r.Dept_user, r.RFQ_Date, prod],
+          `INSERT INTO quotetimeline (Quotenumber, Deptuser, RFQDate, Enquiry, Product) VALUES (?,?,?,'Y',?)`,
+          [r.Quotenumber, r.Deptuser, r.RFQDate, prod],
         );
       }
     }
-
     res.json({ success: true, quoteNumber: quotenumber });
   } catch (err) {
-    console.error("POST /generate-quote", err);
     res.status(500).json({ message: "Server error", detail: err.message });
   }
 });
