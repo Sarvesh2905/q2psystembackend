@@ -93,7 +93,7 @@ router.post("/", authMiddleware, async (req, res) => {
       `INSERT INTO product
         (Products, Description, Facing_Factory, status, Image, Prd_group)
        VALUES (?,?,?,?,?,?)`,
-      [Products, Description, FacingFactory, "Active", null, Prdgroup],
+      [Products, Description, FacingFactory, "Active", "default.png", Prdgroup], // ✅ FIXED
     );
     res.json({ success: true, message: "Product added successfully!" });
   } catch (err) {

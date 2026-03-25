@@ -33,8 +33,9 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Country_code, Country_name, Region, Currency,
-              Currency_Name, Conversion_rate, status
+      `SELECT Sno, Country_code AS Countrycode, Country_name AS Countryname,
+              Region, Currency, Currency_Name AS CurrencyName,
+              Conversion_rate AS Conversionrate, status
        FROM country ORDER BY Country_name ASC`,
     );
     res.json(rows);
@@ -71,16 +72,24 @@ router.post("/", authMiddleware, async (req, res) => {
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  let {
-    Countrycode,
-    Countryname,
-    Region,
-    Currency,
-    CurrencyName,
-    Conversionrate,
-  } = req.body;
+  let { Countrycode, Countryname, Region, Currency, CurrencyName } = req.body;
 
-  if (!Countrycode || !Countryname || !Currency || !Conversionrate)
+  // ✅ Accept any field name variation the frontend may send
+  let Conversionrate =
+    req.body.Conversionrate ??
+    req.body.Conversion_rate ??
+    req.body.conversionrate ??
+    req.body.conversion_rate;
+
+  // ✅ Safe empty check — avoids !0 being true
+  if (
+    !Countrycode ||
+    !Countryname ||
+    !Currency ||
+    Conversionrate === undefined ||
+    Conversionrate === null ||
+    Conversionrate === ""
+  )
     return res.status(400).json({
       message:
         "Country Code, Name, Currency Code and Conversion Rate are required.",
@@ -99,7 +108,7 @@ router.post("/", authMiddleware, async (req, res) => {
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
-  const convRate = parseFloat(Conversionrate) || 0;
+  const convRate = parseFloat(Conversionrate); // ✅ no || 0 — 0 is a valid rate
 
   try {
     const [existing] = await pool.query(
@@ -113,8 +122,7 @@ router.post("/", authMiddleware, async (req, res) => {
 
     await pool.query(
       `INSERT INTO country
-        (Country_code, Country_name, Region, Currency,
-         Currency_Name, Conversion_rate, status)
+        (Country_code, Country_name, Region, Currency, Currency_Name, Conversion_rate, status)
        VALUES (?,?,?,?,?,?,?)`,
       [
         Countrycode,
@@ -139,7 +147,13 @@ router.put("/:sno", authMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Access denied." });
 
   const { sno } = req.params;
-  let { Region, Conversionrate } = req.body;
+  let { Region } = req.body;
+
+  let Conversionrate =
+    req.body.Conversionrate ??
+    req.body.Conversion_rate ??
+    req.body.conversionrate ??
+    req.body.conversion_rate;
 
   Region = Region?.trim()
     ? Region.trim()
