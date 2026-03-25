@@ -14,11 +14,20 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// GET all
+router.get("/counts", authMiddleware, async (req, res) => {
+  try {
+    const [[total]] = await pool.query("SELECT COUNT(*) AS cnt FROM reason");
+    res.json({ total: total.cnt });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Reason_Code AS ReasonCode, Description FROM reason ORDER BY Reason_Code ASC`,
+      `SELECT Sno, Reason_Code AS ReasonCode, Description
+       FROM reason ORDER BY Reason_Code ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -26,49 +35,50 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// CHECK duplicate Reason_Code
 router.get("/check", authMiddleware, async (req, res) => {
-  const val = (req.query.reason || "").toLowerCase().replace(/\s+/g, "");
+  const val = (req.query.reasoncode || "").toLowerCase().trim();
+  if (!val) return res.json({ exists: false });
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Reason_Code),' ','')) as nm FROM reason`,
+      `SELECT LOWER(TRIM(Reason_Code)) as nm FROM reason`,
     );
     const exists = rows.some((r) => r.nm === val);
     if (exists)
-      return res.json({ exists: true, message: "The Reason already exists." });
+      return res.json({
+        exists: true,
+        message:
+          "This Reason Code already exists. Please enter a different one.",
+      });
     res.json({ exists: false });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// ADD
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
   let { ReasonCode, Description } = req.body;
-
   if (!ReasonCode || !ReasonCode.trim())
     return res.status(400).json({ message: "Reason Code is required." });
-  if (!Description || !Description.trim())
-    return res.status(400).json({ message: "Description is required." });
 
   ReasonCode = ReasonCode.trim().toUpperCase();
-  Description = Description.trim();
 
   try {
     const [rows] = await pool.query(
-      `SELECT LOWER(REPLACE(TRIM(Reason_Code),' ','')) as nm FROM reason`,
+      `SELECT LOWER(TRIM(Reason_Code)) as nm FROM reason`,
     );
-    const normalised = ReasonCode.toLowerCase().replace(/\s+/g, "");
-    if (rows.some((r) => r.nm === normalised))
-      return res.status(409).json({ message: "The Reason already exists." });
+    if (rows.some((r) => r.nm === ReasonCode.toLowerCase()))
+      return res.status(409).json({
+        message:
+          "This Reason Code already exists. Please enter a different one.",
+      });
 
     await pool.query(
       `INSERT INTO reason (Reason_Code, Description) VALUES (?, ?)`,
-      [ReasonCode, Description],
+      [ReasonCode, Description?.trim() || null],
     );
     res.json({ success: true, message: "Reason added successfully!" });
   } catch (err) {
@@ -76,24 +86,18 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// EDIT (Reason_Code locked)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
   const { sno } = req.params;
-  let { Description } = req.body;
-
-  if (!Description || !Description.trim())
-    return res.status(400).json({ message: "Description is required." });
-
-  Description = Description.trim();
+  const { Description } = req.body;
 
   try {
     const [result] = await pool.query(
       `UPDATE reason SET Description=? WHERE Sno=?`,
-      [Description, sno],
+      [Description?.trim() || null, sno],
     );
     if (result.affectedRows === 0)
       return res.status(404).json({ message: "Record not found." });

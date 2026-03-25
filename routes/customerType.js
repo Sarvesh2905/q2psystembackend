@@ -14,20 +14,16 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// counts — per Type
+// counts
 router.get("/counts", authMiddleware, async (req, res) => {
-  const { type } = req.query;
-  if (!type) return res.status(400).json({ message: "Type is required." });
   try {
     const [[active]] = await pool.query(
       `SELECT COUNT(*) AS cnt FROM quote_data
-       WHERE Type = ? AND Status = 'Active'`,
-      [type],
+       WHERE Type = 'Customertype' AND Status = 'Active'`,
     );
     const [[inactive]] = await pool.query(
       `SELECT COUNT(*) AS cnt FROM quote_data
-       WHERE Type = ? AND Status = 'Inactive'`,
-      [type],
+       WHERE Type = 'Customertype' AND Status = 'Inactive'`,
     );
     res.json({ active: active.cnt, inactive: inactive.cnt });
   } catch (err) {
@@ -36,15 +32,14 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// all records by Type
+// all customer types
 router.get("/", authMiddleware, async (req, res) => {
-  const { type } = req.query;
-  if (!type) return res.status(400).json({ message: "Type is required." });
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Data, Type, Status AS status
-       FROM quote_data WHERE Type = ? ORDER BY Sno ASC`,
-      [type],
+      `SELECT Sno, Data AS CustomerType, Status AS status
+       FROM quote_data
+       WHERE Type = 'Customertype'
+       ORDER BY Data ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -56,18 +51,18 @@ router.get("/", authMiddleware, async (req, res) => {
 // duplicate check
 router.get("/check", authMiddleware, async (req, res) => {
   const val = (req.query.val || "").trim().toUpperCase();
-  const { type } = req.query;
-  if (!val || !type) return res.json({ exists: false });
+  if (!val) return res.json({ exists: false });
   try {
     const [rows] = await pool.query(
       `SELECT Sno FROM quote_data
-       WHERE Type = ? AND UPPER(TRIM(Data)) = ?`,
-      [type, val],
+       WHERE Type = 'Customertype' AND UPPER(TRIM(Data)) = ?`,
+      [val],
     );
     if (rows.length > 0)
       return res.json({
         exists: true,
-        message: "This value already exists. Please enter a different one.",
+        message:
+          "This Customer Type already exists. Please enter a different one.",
       });
     res.json({ exists: false });
   } catch (err) {
@@ -76,67 +71,39 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// ADD
+// ADD customer type
 router.post("/", authMiddleware, async (req, res) => {
   const { role } = req.user;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  let { Data, Type } = req.body;
-  if (!Data || !Data.trim())
-    return res.status(400).json({ message: "Value is required." });
-  if (!Type || !Type.trim())
-    return res.status(400).json({ message: "Type is required." });
+  let { CustomerType } = req.body;
+  if (!CustomerType || !CustomerType.trim())
+    return res.status(400).json({ message: "Customer Type is required." });
 
-  Data = Data.trim().toUpperCase();
+  CustomerType = CustomerType.trim().toUpperCase();
 
   try {
     const [existing] = await pool.query(
       `SELECT Sno FROM quote_data
-       WHERE Type = ? AND UPPER(TRIM(Data)) = ?`,
-      [Type, Data],
+       WHERE Type = 'Customertype' AND UPPER(TRIM(Data)) = ?`,
+      [CustomerType],
     );
     if (existing.length > 0)
       return res.status(409).json({
-        message: "This value already exists. Please enter a different one.",
+        message:
+          "This Customer Type already exists. Please enter a different one.",
       });
 
     await pool.query(
       `INSERT INTO quote_data (Data, Type, Description, Status)
-       VALUES (?, ?, NULL, 'Active')`,
-      [Data, Type],
+       VALUES (?, 'Customertype', NULL, 'Active')`,
+      [CustomerType],
     );
-    res.json({ success: true, message: "Added successfully!" });
+    res.json({ success: true, message: "Customer Type added successfully!" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error: " + err.message });
-  }
-});
-
-// EDIT (Data value)
-router.put("/:sno", authMiddleware, async (req, res) => {
-  const { role } = req.user;
-  if (role !== "Admin" && role !== "Manager")
-    return res.status(403).json({ message: "Access denied." });
-
-  const { sno } = req.params;
-  let { Data } = req.body;
-  if (!Data || !Data.trim())
-    return res.status(400).json({ message: "Value is required." });
-
-  Data = Data.trim().toUpperCase();
-
-  try {
-    const [result] = await pool.query(
-      `UPDATE quote_data SET Data=? WHERE Sno=?`,
-      [Data, sno],
-    );
-    if (result.affectedRows === 0)
-      return res.status(404).json({ message: "Record not found." });
-    res.json({ success: true, message: "Updated successfully!" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
   }
 });
 
@@ -152,10 +119,10 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     return res.status(400).json({ message: "Invalid status." });
 
   try {
-    await pool.query(`UPDATE quote_data SET Status=? WHERE Sno=?`, [
-      status,
-      sno,
-    ]);
+    await pool.query(
+      `UPDATE quote_data SET Status=? WHERE Sno=? AND Type='Customertype'`,
+      [status, sno],
+    );
     res.json({ success: true });
   } catch (err) {
     console.error(err);

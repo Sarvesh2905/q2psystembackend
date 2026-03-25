@@ -18,7 +18,7 @@ function authMiddleware(req, res, next) {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT Sno, Industry, Description FROM end_industry ORDER BY Industry ASC",
+      `SELECT Sno, Industry, Description FROM end_industry ORDER BY Industry ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -30,7 +30,7 @@ router.get("/", authMiddleware, async (req, res) => {
 router.get("/counts", authMiddleware, async (req, res) => {
   try {
     const [[total]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM end_industry",
+      `SELECT COUNT(*) AS cnt FROM end_industry`,
     );
     res.json({ total: total.cnt });
   } catch (err) {
@@ -38,12 +38,12 @@ router.get("/counts", authMiddleware, async (req, res) => {
   }
 });
 
-// CHECK duplicate Industry
+// duplicate check
 router.get("/check", authMiddleware, async (req, res) => {
-  const ind = (req.query.ind || "").toLowerCase().replace(/\s+/g, "");
+  const ind = (req.query.ind || "").toLowerCase().replace(/\s/g, "");
   try {
     const [rows] = await pool.query(
-      "SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM end_industry",
+      `SELECT LOWER(REPLACE(TRIM(Industry), ' ', '')) AS nm FROM end_industry`,
     );
     const exists = rows.some((r) => r.nm === ind);
     if (exists)
@@ -72,9 +72,9 @@ router.post("/", authMiddleware, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      "SELECT LOWER(REPLACE(TRIM(Industry),' ','')) as nm FROM end_industry",
+      `SELECT LOWER(REPLACE(TRIM(Industry), ' ', '')) AS nm FROM end_industry`,
     );
-    const normalised = Industry.toLowerCase().replace(/\s+/g, "");
+    const normalised = Industry.toLowerCase().replace(/\s/g, "");
     if (rows.some((r) => r.nm === normalised))
       return res.status(409).json({
         message:
@@ -82,7 +82,7 @@ router.post("/", authMiddleware, async (req, res) => {
       });
 
     await pool.query(
-      "INSERT INTO end_industry (Industry, Description) VALUES (?, ?)",
+      `INSERT INTO end_industry (Industry, Description) VALUES (?, ?)`,
       [Industry, Description?.trim() || null],
     );
     res.json({ success: true, message: "End Industry added successfully!" });
@@ -91,7 +91,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// EDIT end industry (Description only)
+// EDIT (Description only, Industry locked)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -102,7 +102,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   try {
     const [result] = await pool.query(
-      "UPDATE end_industry SET Description=? WHERE Sno=?",
+      `UPDATE end_industry SET Description=? WHERE Sno=?`,
       [Description?.trim() || null, sno],
     );
     if (result.affectedRows === 0)

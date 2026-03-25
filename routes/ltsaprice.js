@@ -41,9 +41,16 @@ router.get("/", authMiddleware, async (req, res) => {
     } catch {}
 
     const [rows] = await pool.query(
-      `SELECT Sno, LTSA_Code, Customer_partno, Cfti_partno, Description,
-              SplPrice, Start_Date, Exp_Date, Curr, Leadtime,
-              DeliveryTerm, Product, Market, status
+      `SELECT Sno,
+              LTSA_Code       AS LTSACode,
+              Customer_partno AS Customerpartno,
+              Cfti_partno     AS Cftipartno,
+              Description,
+              SplPrice,
+              Start_Date      AS StartDate,
+              Exp_Date        AS ExpDate,
+              Curr, Leadtime, DeliveryTerm,
+              Product, Market, status
        FROM ltsa_price
        WHERE status='Active'
        ORDER BY Cfti_partno ASC`,

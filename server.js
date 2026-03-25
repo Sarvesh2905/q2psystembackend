@@ -15,12 +15,12 @@ app.use("/api/buyer", require("./routes/buyer"));
 app.use("/api/country", require("./routes/country"));
 app.use("/api/product", require("./routes/product"));
 app.use("/api/price", require("./routes/price"));
-app.use("/api/ltsaprice", require("./routes/ltsaprice")); // ← THIS LINE FIXED
+app.use("/api/ltsaprice", require("./routes/ltsaprice"));
 app.use("/api/gereference", require("./routes/gereference"));
 app.use("/api/discount", require("./routes/discount"));
 app.use("/api/spcl-discount", require("./routes/spclDiscount"));
 app.use("/api/end-industry", require("./routes/endIndustry"));
-app.use("/api/country-type", require("./routes/countryType"));
+app.use("/api/customer-type", require("./routes/customerType")); // ← CHANGED from country-type / countryType
 app.use("/api/status-master", require("./routes/statusMaster"));
 app.use("/api/reason", require("./routes/reason"));
 app.use("/api/timeline-target", require("./routes/timelineTarget"));

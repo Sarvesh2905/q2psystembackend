@@ -33,7 +33,7 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      "SELECT Sno, Name, status FROM spcl_discount ORDER BY Name ASC",
+      `SELECT Sno, Name, status FROM spcl_discount ORDER BY Name ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -45,15 +45,15 @@ router.get("/", authMiddleware, async (req, res) => {
 router.get("/customers", authMiddleware, async (req, res) => {
   try {
     const [customers] = await pool.query(
-      `SELECT customer_name, Location FROM customer
-       WHERE status='Active' ORDER BY customer_name ASC`,
+      `SELECT customer_name AS customername, Location
+       FROM customer WHERE status='Active' ORDER BY customer_name ASC`,
     );
     res.json(
       customers.map((c) => ({
-        value: c.customer_name,
+        value: c.customername,
         label: c.Location
-          ? `${c.customer_name} - ${c.Location}`
-          : c.customer_name,
+          ? `${c.customername} - ${c.Location}`
+          : c.customername,
       })),
     );
   } catch (err) {
@@ -63,10 +63,10 @@ router.get("/customers", authMiddleware, async (req, res) => {
 
 // duplicate name check
 router.get("/check", authMiddleware, async (req, res) => {
-  const custname = (req.query.custname || "").toLowerCase().replace(/\s+/g, "");
+  const custname = (req.query.custname || "").toLowerCase().replace(/\s/g, "");
   try {
     const [rows] = await pool.query(
-      "SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcl_discount",
+      `SELECT LOWER(REPLACE(TRIM(Name), ' ', '')) AS nm FROM spcl_discount`,
     );
     const exists = rows.some((r) => r.nm === custname);
     if (exists)
@@ -81,7 +81,7 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// add special-discount customer
+// ADD special-discount customer
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -93,9 +93,9 @@ router.post("/", authMiddleware, async (req, res) => {
 
   try {
     const [rows] = await pool.query(
-      "SELECT LOWER(REPLACE(TRIM(Name),' ','')) as nm FROM spcl_discount",
+      `SELECT LOWER(REPLACE(TRIM(Name), ' ', '')) AS nm FROM spcl_discount`,
     );
-    const normalised = Name.toLowerCase().replace(/\s+/g, "");
+    const normalised = Name.toLowerCase().replace(/\s/g, "");
     if (rows.some((r) => r.nm === normalised))
       return res.status(409).json({
         message:
@@ -103,7 +103,7 @@ router.post("/", authMiddleware, async (req, res) => {
       });
 
     await pool.query(
-      "INSERT INTO spcl_discount (Name, status) VALUES (?, 'Active')",
+      `INSERT INTO spcl_discount (Name, status) VALUES (?, 'Active')`,
       [Name.trim()],
     );
     res.json({
@@ -115,7 +115,7 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// toggle status
+// toggle status ✅ FIXED: quote_register + quote_data
 router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -123,7 +123,6 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
 
   const { sno } = req.params;
   const { status } = req.body;
-
   if (!["Active", "Inactive"].includes(status))
     return res.status(400).json({ message: "Invalid status." });
 
@@ -131,24 +130,26 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
     if (status === "Inactive") {
       try {
         const [openQuotes] = await pool.query(
-          `SELECT Quote_number FROM quote_register
-           WHERE Customer_name IN (SELECT Name FROM spcl_discount WHERE Sno=?)
-             AND Opportunity_stage IN (
-               SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
-             )`,
+          `SELECT Quotenumber FROM quote_register
+           WHERE Customername IN (SELECT Name FROM spcl_discount WHERE Sno=?)
+           AND Opportunitystage IN (
+             SELECT Data FROM quote_data WHERE Sno IN (22,24,27,29,30)
+           )`,
           [sno],
         );
         if (openQuotes.length > 0) {
-          const quotenumbers = openQuotes.map((q) => q.Quote_number).join(", ");
+          const quotenumbers = openQuotes.map((q) => q.Quotenumber).join(", ");
           return res.json({
             openquote: true,
             message: `There are Open Quotes with this Customer: ${quotenumbers}`,
           });
         }
-      } catch (_) {}
+      } catch {
+        // proceed with toggle if subquery fails
+      }
     }
 
-    await pool.query("UPDATE spcl_discount SET status=? WHERE Sno=?", [
+    await pool.query(`UPDATE spcl_discount SET status=? WHERE Sno=?`, [
       status,
       sno,
     ]);

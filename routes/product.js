@@ -34,8 +34,8 @@ router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Sno, Products, Description,
-              Facing_Factory AS FacingFactory,
-              Prd_group      AS Prdgroup,
+              FacingFactory,
+              Prdgroup,
               status
        FROM product ORDER BY Products ASC`,
     );
@@ -91,9 +91,9 @@ router.post("/", authMiddleware, async (req, res) => {
   try {
     await pool.query(
       `INSERT INTO product
-        (Products, Description, Facing_Factory, status, Image, Prd_group)
+         (Products, Description, FacingFactory, status, Image, Prdgroup)
        VALUES (?,?,?,?,?,?)`,
-      [Products, Description, FacingFactory, "Active", "default.png", Prdgroup], // ✅ FIXED
+      [Products, Description, FacingFactory, "Active", "default.png", Prdgroup],
     );
     res.json({ success: true, message: "Product added successfully!" });
   } catch (err) {

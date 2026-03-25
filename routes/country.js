@@ -33,9 +33,8 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Country_code AS Countrycode, Country_name AS Countryname,
-              Region, Currency, Currency_Name AS CurrencyName,
-              Conversion_rate AS Conversionrate, status
+      `SELECT Sno, Country_code, Country_name, Region, Currency,
+              Currency_Name, Conversion_rate, status
        FROM country ORDER BY Country_name ASC`,
     );
     res.json(rows);
@@ -56,7 +55,7 @@ router.get("/check", authMiddleware, async (req, res) => {
       if (rows.length > 0)
         return res.json({
           exists: true,
-          field: "Countrycode",
+          field: "Country_code",
           message: "Country code already exists. Please enter a different one.",
         });
     }
@@ -72,48 +71,48 @@ router.post("/", authMiddleware, async (req, res) => {
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  let { Countrycode, Countryname, Region, Currency, CurrencyName } = req.body;
+  let {
+    Country_code,
+    Country_name,
+    Region,
+    Currency,
+    Currency_Name,
+    Conversion_rate,
+  } = req.body;
 
-  // ✅ Accept any field name variation the frontend may send
-  let Conversionrate =
-    req.body.Conversionrate ??
-    req.body.Conversion_rate ??
-    req.body.conversionrate ??
-    req.body.conversion_rate;
-
-  // ✅ Safe empty check — avoids !0 being true
   if (
-    !Countrycode ||
-    !Countryname ||
+    !Country_code ||
+    !Country_name ||
     !Currency ||
-    Conversionrate === undefined ||
-    Conversionrate === null ||
-    Conversionrate === ""
-  )
+    Conversion_rate === undefined ||
+    Conversion_rate === null ||
+    Conversion_rate === ""
+  ) {
     return res.status(400).json({
       message:
         "Country Code, Name, Currency Code and Conversion Rate are required.",
     });
+  }
 
-  Countrycode = Countrycode.trim().toUpperCase();
-  Countryname = Countryname.trim().toUpperCase();
+  Country_code = Country_code.trim().toUpperCase();
+  Country_name = Country_name.trim().toUpperCase();
   Region = Region?.trim()
     ? Region.trim()
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
   Currency = Currency.trim().toUpperCase();
-  CurrencyName = CurrencyName?.trim()
-    ? CurrencyName.trim()
+  Currency_Name = Currency_Name?.trim()
+    ? Currency_Name.trim()
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
-  const convRate = parseFloat(Conversionrate); // ✅ no || 0 — 0 is a valid rate
+  const convRate = parseFloat(Conversion_rate) || 0;
 
   try {
     const [existing] = await pool.query(
       `SELECT Country_name FROM country WHERE UPPER(Country_name) = ?`,
-      [Countryname],
+      [Country_name],
     );
     if (existing.length > 0)
       return res.status(409).json({
@@ -122,17 +121,9 @@ router.post("/", authMiddleware, async (req, res) => {
 
     await pool.query(
       `INSERT INTO country
-        (Country_code, Country_name, Region, Currency, Currency_Name, Conversion_rate, status)
-       VALUES (?,?,?,?,?,?,?)`,
-      [
-        Countrycode,
-        Countryname,
-        Region,
-        Currency,
-        CurrencyName,
-        convRate,
-        "Active",
-      ],
+         (Country_code, Country_name, Region, Currency, Currency_Name, Conversion_rate, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
+      [Country_code, Country_name, Region, Currency, Currency_Name, convRate],
     );
     res.json({ success: true, message: "Country added successfully!" });
   } catch (err) {
@@ -140,27 +131,21 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// edit country
+// edit country (Region and Conversion_rate only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
   const { sno } = req.params;
-  let { Region } = req.body;
-
-  let Conversionrate =
-    req.body.Conversionrate ??
-    req.body.Conversion_rate ??
-    req.body.conversionrate ??
-    req.body.conversion_rate;
+  let { Region, Conversion_rate } = req.body;
 
   Region = Region?.trim()
     ? Region.trim()
         .toLowerCase()
         .replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
-  const convRate = parseFloat(Conversionrate) || 0;
+  const convRate = parseFloat(Conversion_rate) || 0;
 
   try {
     const [result] = await pool.query(

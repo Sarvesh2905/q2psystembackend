@@ -81,27 +81,27 @@ router.post("/", authMiddleware, async (req, res) => {
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  let { Cftipartno, Description, CostPrice, Currency, Product, Market } =
+  let { Cfti_partno, Description, Cost_Price, Currency, Product, Market } =
     req.body;
 
-  if (!Cftipartno || !Cftipartno.trim())
+  if (!Cfti_partno || !Cfti_partno.trim())
     return res.status(400).json({ message: "CFTI Part No. is required." });
-  if (CostPrice === undefined || CostPrice === null || CostPrice === "")
+  if (Cost_Price === undefined || Cost_Price === null || Cost_Price === "")
     return res.status(400).json({ message: "Cost Price is required." });
-  if (isNaN(Number(CostPrice)) || Number(CostPrice) < 0)
+  if (isNaN(Number(Cost_Price)) || Number(Cost_Price) < 0)
     return res
       .status(400)
       .json({ message: "Cost Price must be a non-negative number." });
   if (!Currency || !Currency.trim())
     return res.status(400).json({ message: "Currency is required." });
 
-  Cftipartno = Cftipartno.trim().toUpperCase();
+  Cfti_partno = Cfti_partno.trim().toUpperCase();
 
   try {
     const [rows] = await pool.query(
       `SELECT LOWER(TRIM(Cfti_partno)) as nm FROM cost_price`,
     );
-    const normalised = Cftipartno.toLowerCase();
+    const normalised = Cfti_partno.toLowerCase();
     if (rows.some((r) => r.nm === normalised))
       return res.status(409).json({
         message:
@@ -113,9 +113,9 @@ router.post("/", authMiddleware, async (req, res) => {
         (Cfti_partno, Description, Cost_Price, Currency, Product, Market, status)
        VALUES (?, ?, ?, ?, ?, ?, 'Active')`,
       [
-        Cftipartno,
+        Cfti_partno,
         Description?.trim() || null,
-        Number(CostPrice),
+        Number(Cost_Price),
         Currency.trim().toUpperCase(),
         Product || null,
         Market?.toUpperCase() || null,
@@ -134,11 +134,11 @@ router.put("/:sno", authMiddleware, async (req, res) => {
     return res.status(403).json({ message: "Access denied." });
 
   const { sno } = req.params;
-  let { Description, CostPrice, Currency, Product, Market } = req.body;
+  let { Description, Cost_Price, Currency, Product, Market } = req.body;
 
-  if (CostPrice === undefined || CostPrice === null || CostPrice === "")
+  if (Cost_Price === undefined || Cost_Price === null || Cost_Price === "")
     return res.status(400).json({ message: "Cost Price is required." });
-  if (isNaN(Number(CostPrice)) || Number(CostPrice) < 0)
+  if (isNaN(Number(Cost_Price)) || Number(Cost_Price) < 0)
     return res
       .status(400)
       .json({ message: "Cost Price must be a non-negative number." });
@@ -152,7 +152,7 @@ router.put("/:sno", authMiddleware, async (req, res) => {
        WHERE Sno=?`,
       [
         Description?.trim() || null,
-        Number(CostPrice),
+        Number(Cost_Price),
         Currency.trim().toUpperCase(),
         Product || null,
         Market?.toUpperCase() || null,

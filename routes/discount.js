@@ -14,13 +14,11 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// GET all discounts
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT Sno, Type, Category, Market, Product, Discount
-       FROM discount
-       ORDER BY Type ASC, Category ASC`,
+       FROM discount ORDER BY Type ASC, Category ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -28,7 +26,6 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// dropdown options
 router.get("/options", authMiddleware, async (req, res) => {
   try {
     const [categories] = await pool.query(
@@ -36,14 +33,11 @@ router.get("/options", authMiddleware, async (req, res) => {
        WHERE Type='Customertype' AND Status='Active' ORDER BY Data ASC`,
     );
     const [products] = await pool.query(
-      `SELECT Products FROM product
-       WHERE status='Active' ORDER BY Products ASC`,
+      `SELECT Products FROM product WHERE status='Active' ORDER BY Products ASC`,
     );
     res.json({
-      categories: categories.map((r) =>
-        r.Data.split(" ")
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(" "),
+      categories: categories.map(
+        (r) => r.Data.charAt(0).toUpperCase() + r.Data.slice(1),
       ),
       products: products.map((r) => r.Products),
     });
@@ -52,13 +46,13 @@ router.get("/options", authMiddleware, async (req, res) => {
   }
 });
 
-// duplicate combination check
 router.get("/check", authMiddleware, async (req, res) => {
   const { type, category, product, market } = req.query;
   try {
     const [rows] = await pool.query(
-      `SELECT COUNT(*) as cnt FROM discount
-       WHERE LOWER(Type)=? AND LOWER(Category)=? AND LOWER(Market)=? AND LOWER(Product)=?`,
+      `SELECT COUNT(*) AS cnt FROM discount
+       WHERE LOWER(Type)=? AND LOWER(Category)=?
+       AND LOWER(Market)=? AND LOWER(Product)=?`,
       [
         (type || "").toLowerCase(),
         (category || "").toLowerCase(),
@@ -78,7 +72,6 @@ router.get("/check", authMiddleware, async (req, res) => {
   }
 });
 
-// check if discount change affects open quotes
 router.get("/check/openquote", authMiddleware, async (req, res) => {
   const { category, product, discount } = req.query;
   const newDiscount = parseFloat(discount) || 0;
@@ -90,20 +83,22 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
     if (existing.length > 0 && existing[0].Discount !== newDiscount) {
       try {
         const [openQuotes] = await pool.query(
-          `SELECT Quote_number FROM quote_register
-           WHERE Customer_type=? AND Product=?`,
+          `SELECT Quote_number AS Quotenumber FROM quote_register
+           WHERE Customer_type=? AND FIND_IN_SET(?, Product)`,
           [category, product],
         );
         if (openQuotes.length > 0) {
           const list = openQuotes
-            .map((q) => `<li style="width:150px">${q.Quote_number}</li>`)
+            .map((q) => `<li style="width:150px">${q.Quotenumber}</li>`)
             .join("");
           return res.json({
             discountchange: true,
-            message: `There are Open Quotes affected by this change:<ul>${list}</ul>`,
+            message: `There are Open Quotes affected by this change<ul>${list}</ul>`,
           });
         }
-      } catch (_) {}
+      } catch {
+        return res.json({ discountchange: false });
+      }
     }
     res.json({ discountchange: false });
   } catch (err) {
@@ -111,14 +106,12 @@ router.get("/check/openquote", authMiddleware, async (req, res) => {
   }
 });
 
-// add discount
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
   const { Type, Category, Market, Product, Discount } = req.body;
-
   if (
     !Type ||
     !Category ||
@@ -134,8 +127,9 @@ router.post("/", authMiddleware, async (req, res) => {
 
   try {
     const [exists] = await pool.query(
-      `SELECT COUNT(*) as cnt FROM discount
-       WHERE LOWER(Type)=? AND LOWER(Category)=? AND LOWER(Market)=? AND LOWER(Product)=?`,
+      `SELECT COUNT(*) AS cnt FROM discount
+       WHERE LOWER(Type)=? AND LOWER(Category)=?
+       AND LOWER(Market)=? AND LOWER(Product)=?`,
       [
         Type.toLowerCase(),
         Category.toLowerCase(),
@@ -160,7 +154,6 @@ router.post("/", authMiddleware, async (req, res) => {
   }
 });
 
-// edit discount (value only)
 router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
@@ -168,7 +161,6 @@ router.put("/:sno", authMiddleware, async (req, res) => {
 
   const { sno } = req.params;
   const { Discount } = req.body;
-
   if (Discount === undefined || Discount === "")
     return res.status(400).json({ message: "Discount value is required." });
 

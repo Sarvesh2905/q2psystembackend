@@ -33,7 +33,7 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, Customer, Buyer_name AS Buyername, Designation, email1, email2,
+      `SELECT Sno, Customer, Buyer_name, Designation, email1, email2,
               contact, Location, Segment, status, Comments
        FROM buyer ORDER BY Customer ASC, Buyer_name ASC`,
     );
@@ -168,7 +168,7 @@ router.post("/", authMiddleware, async (req, res) => {
 
   let {
     Customer,
-    Buyername,
+    Buyer_name,
     Designation,
     email1,
     email2,
@@ -180,7 +180,7 @@ router.post("/", authMiddleware, async (req, res) => {
     Comments,
   } = req.body;
 
-  if (!Customer || !Buyername)
+  if (!Customer || !Buyer_name)
     return res
       .status(400)
       .json({ message: "Customer and Buyer Name are required." });
@@ -197,7 +197,7 @@ router.post("/", authMiddleware, async (req, res) => {
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
         Customer,
-        Buyername,
+        Buyer_name,
         Designation || null,
         email1 || null,
         email2 || null,

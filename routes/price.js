@@ -44,9 +44,17 @@ router.get("/", authMiddleware, async (req, res) => {
   await autoExpire();
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, LTSA_Code, Customer_partno, Cfti_partno, Description,
-              ListPrice, Start_Date, Exp_Date, Curr, Leadtime,
-              DeliveryTerm, SPL_Cond, Remarks, Product, Market, status
+      `SELECT Sno,
+              LTSA_Code       AS LTSACode,
+              Customer_partno AS Customerpartno,
+              Cfti_partno     AS Cftipartno,
+              Description,
+              ListPrice,
+              Start_Date      AS StartDate,
+              Exp_Date        AS ExpDate,
+              Curr, Leadtime, DeliveryTerm,
+              SPL_Cond        AS SPLCond,
+              Remarks, Product, Market, status
        FROM price WHERE status='Active'
        ORDER BY Cfti_partno ASC`,
     );
@@ -117,8 +125,8 @@ router.get("/check/custpartno", authMiddleware, async (req, res) => {
   }
 });
 
-// check open quote — price_schedule_details not in DB, safe fallback
-router.get("/check/openquote", authMiddleware, async (req, res) => {
+// check open quote
+router.get("/checkopenquote", authMiddleware, async (req, res) => {
   res.json({ openquote: false });
 });
 

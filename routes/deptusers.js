@@ -34,9 +34,8 @@ router.get("/counts", authMiddleware, async (req, res) => {
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT Sno, dept_user_id, Username, Email, status
-       FROM dept_users
-       ORDER BY dept_user_id ASC`,
+      `SELECT Sno, dept_user_id AS deptuserid, Username, Email, status
+       FROM dept_users ORDER BY Username ASC`,
     );
     res.json(rows);
   } catch (err) {
@@ -45,24 +44,35 @@ router.get("/", authMiddleware, async (req, res) => {
   }
 });
 
-// check duplicate dept_user_id
-router.get("/check-deptuserid", authMiddleware, async (req, res) => {
-  const { deptuserid } = req.query;
-  if (!deptuserid) return res.json({ exists: false });
-
+// duplicate check
+router.get("/check", authMiddleware, async (req, res) => {
+  const { name, email } = req.query;
   try {
-    const norm = deptuserid.toLowerCase().replace(/\s/g, "");
-    const [rows] = await pool.query(
-      `SELECT dept_user_id
-       FROM dept_users
-       WHERE LOWER(REPLACE(TRIM(dept_user_id), ' ', '')) = ?`,
-      [norm],
-    );
-    if (rows.length > 0)
-      return res.json({
-        exists: true,
-        message: "The Application Engineer ID already exists.",
-      });
+    if (name) {
+      const [rows] = await pool.query(
+        `SELECT Username FROM dept_users
+         WHERE LOWER(REPLACE(TRIM(Username), ' ', '')) = ?`,
+        [name.toLowerCase().replace(/\s/g, "")],
+      );
+      if (rows.length > 0)
+        return res.json({
+          exists: true,
+          field: "name",
+          message: "This Name already exists. Please enter a different one.",
+        });
+    }
+    if (email) {
+      const [rows] = await pool.query(
+        `SELECT Email FROM dept_users WHERE LOWER(TRIM(Email)) = ?`,
+        [email.toLowerCase().trim()],
+      );
+      if (rows.length > 0)
+        return res.json({
+          exists: true,
+          field: "email",
+          message: "This Email already exists. Please enter a different one.",
+        });
+    }
     res.json({ exists: false });
   } catch (err) {
     console.error(err);
@@ -70,73 +80,79 @@ router.get("/check-deptuserid", authMiddleware, async (req, res) => {
   }
 });
 
-// add dept user
+// add
 router.post("/", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  let { deptuserid, Username, Email } = req.body;
-  if (!deptuserid || !Username || !Email)
-    return res
-      .status(400)
-      .json({ message: "ID, Name and Email are required." });
+  let { Username, Email } = req.body;
+  if (!Username || !Username.trim())
+    return res.status(400).json({ message: "Name is required." });
+  if (!Email || !Email.trim())
+    return res.status(400).json({ message: "Email is required." });
 
-  deptuserid = deptuserid.toUpperCase();
   Username = Username.trim()
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   try {
-    await pool.query(
-      `INSERT INTO dept_users (dept_user_id, Username, Email, status)
-       VALUES (?, ?, ?, ?)`,
-      [deptuserid, Username, Email, "Active"],
+    const [nameCheck] = await pool.query(
+      `SELECT Username FROM dept_users
+       WHERE LOWER(REPLACE(TRIM(Username), ' ', '')) = ?`,
+      [Username.toLowerCase().replace(/\s/g, "")],
     );
-    res.json({ success: true, message: "User added successfully!" });
+    if (nameCheck.length > 0)
+      return res.status(409).json({
+        message: "This Name already exists. Please enter a different one.",
+      });
+
+    const [emailCheck] = await pool.query(
+      `SELECT Email FROM dept_users WHERE LOWER(TRIM(Email)) = ?`,
+      [Email.trim().toLowerCase()],
+    );
+    if (emailCheck.length > 0)
+      return res.status(409).json({
+        message: "This Email already exists. Please enter a different one.",
+      });
+
+    await pool.query(
+      `INSERT INTO dept_users (Username, Email, status) VALUES (?, ?, 'Active')`,
+      [Username, Email.trim().toLowerCase()],
+    );
+    res.json({
+      success: true,
+      message: "Application Engineer added successfully!",
+    });
   } catch (err) {
     console.error(err);
-    if (err.code === "ER_DUP_ENTRY") {
-      if (err.message.includes("dept_user_id"))
-        return res
-          .status(409)
-          .json({ message: "Application Engineer ID already exists." });
-      if (err.message.includes("Username"))
-        return res.status(409).json({ message: "Name already exists." });
-    }
+    if (err.code === "ER_DUP_ENTRY")
+      return res.status(409).json({ message: "Entry already exists." });
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// edit dept user
-router.put("/:deptuserid", authMiddleware, async (req, res) => {
+// edit (Email only, Username locked)
+router.put("/:sno", authMiddleware, async (req, res) => {
   const role = req.user.role;
   if (role !== "Admin" && role !== "Manager")
     return res.status(403).json({ message: "Access denied." });
 
-  const { deptuserid } = req.params;
-  let { Username, Email } = req.body;
-
-  if (!Username || !Email)
-    return res.status(400).json({ message: "Name and Email are required." });
-
-  Username = Username.trim()
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const { sno } = req.params;
+  const { Email } = req.body;
+  if (!Email || !Email.trim())
+    return res.status(400).json({ message: "Email is required." });
 
   try {
     const [result] = await pool.query(
-      `UPDATE dept_users SET Username = ?, Email = ?
-       WHERE dept_user_id = ?`,
-      [Username, Email, deptuserid],
+      `UPDATE dept_users SET Email=? WHERE Sno=?`,
+      [Email.trim().toLowerCase(), sno],
     );
     if (result.affectedRows === 0)
-      return res.status(404).json({ message: "User not found." });
+      return res.status(404).json({ message: "Record not found." });
     res.json({ success: true, message: "User updated successfully!" });
   } catch (err) {
     console.error(err);
-    if (err.code === "ER_DUP_ENTRY")
-      return res.status(409).json({ message: "Name already exists." });
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -149,12 +165,11 @@ router.patch("/toggle/:sno", authMiddleware, async (req, res) => {
 
   const { sno } = req.params;
   const { status } = req.body;
-
   if (!["Active", "Inactive"].includes(status))
     return res.status(400).json({ message: "Invalid status value." });
 
   try {
-    await pool.query("UPDATE dept_users SET status = ? WHERE Sno = ?", [
+    await pool.query(`UPDATE dept_users SET status=? WHERE Sno=?`, [
       status,
       sno,
     ]);
